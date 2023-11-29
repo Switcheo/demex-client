@@ -13,4 +13,8 @@
 
 This is a typescript client that wraps around carbon-js-sdk that aims to proivde a simple way to programmatically trade on Carbon's Perpetuals markets.
 
+## Warning
+
+This client is considered Alpha software and is under develpoment at the moment. Client may contain bugs and hence use at your own risk. If you have any questions you can reach out to me @SeverusCuckoo on telegram.
+
 ## Features
