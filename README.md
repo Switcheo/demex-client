@@ -13,8 +13,19 @@
 
 This is a typescript client that wraps around carbon-js-sdk that aims to proivde a simple way to programmatically trade on Carbon's Perpetuals markets.
 
+> Trading on spot market is not fully supported on this client at the moment.
+
 ## Warning
 
 This client is considered Alpha software and is under develpoment at the moment. Client may contain bugs and hence use at your own risk. If you have any questions you can reach out to me @SeverusCuckoo on telegram.
 
 ## Features
+
+- [ ] Order submission with human readable inputs
+- [ ] Outputs values as human readable values
+- [ ] Deals only with human friendly tickers instead of market ids (e.g. "ETH" -> "cmkt/117")
+- [ ] Dead man's switch for chain and indexer liveliness
+- [ ] Virtualization of user account state via websockets
+- [ ] Virtualization of market data state via websockets
+- [ ] Funding rate caculation
+- [ ] Deposits and withdrawls
