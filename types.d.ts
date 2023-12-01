@@ -16,6 +16,21 @@ export interface Duration {
   nanos: number
 }
 
+export interface Token {
+  id: string
+  creator: string
+  denom: string
+  name: string
+  symbol: string
+  decimals: number
+  bridgeId: number
+  chainId: number
+  tokenAddress: string
+  bridgeAddress: string
+  isActive: boolean
+  createdBlockHeight: number
+}
+
 export interface MarketParams {
   name: string
   displayName?: string

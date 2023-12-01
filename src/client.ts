@@ -7,52 +7,82 @@ import camelCase from 'lodash.camelcase'
 import mapKeys from 'lodash.mapkeys'
 import WebSocket from 'ws'
 
-import { MarketParams, Book, PriceLevel, BookSideMap } from '../types'
+import { MarketParams, Book, PriceLevel, BookSideMap, Token } from '../types'
 import { sleep, toHumanPrice, toHumanQuantity, sortAsc, sortDesc } from './utils'
 
 export class Client {
   public sdk: CarbonSDK | null
+  tokensInfo: { [name: string]: Token }
   marketsInfo: { [name: string]: MarketParams }
   perpMarkets: { [name: string]: MarketParams }
   networkConfig: CarbonSDKInitOpts
   ws: WebSocket
   books: { [name: string]: Book }
   orderbookChannels: string[]
+  address: string | null
+  initialized: boolean = false
 
   constructor(options?: CarbonSDKInitOpts) {
+    this.tokensInfo = {}
     this.marketsInfo = {}
     this.perpMarkets = {}
     this.books = {}
     this.sdk = null
     this.networkConfig = options
     this.orderbookChannels = []
+    this.address = null
   }
 
-  /**
-   * Calculates the square root of a number.
-   *
-   * @param network the network to connect the client to
-   * @param pkey? the private key to use for signing transactions. If not provided, the client will not be able to perform any user actions.
-   */
-  async init(pkey?: string | Buffer) {
+  private async init() {
+    if (this.initialized) {
+      throw new Error('client already initialized')
+    }
+
     const settings = this.networkConfig || { network: CarbonSDK.Network.MainNet }
     this.sdk = await CarbonSDK.instance(settings)
 
     if (settings.network === CarbonSDK.Network.MainNet) {
       await this.checkLiveliness()
     }
-
     await this.updateMarketsInfo()
+    await this.updateTokensInfo()
 
-    if (pkey) {
-      this.sdk = await this.sdk.clone().connectWithPrivateKey(pkey, {
-        ...settings,
-        disableRetryOnSequenceError: true,
-      })
+    this.initialized = true
+  }
+
+  /**
+   * Initializes the wallet.
+   *
+   * @param pkey the private key to use for signing transactions. If not provided, the client will not be able to perform any user actions.
+   */
+  async initWallet(pkey: string | Buffer) {
+    await this.init()
+    const settings = this.networkConfig || { network: CarbonSDK.Network.MainNet }
+    this.sdk = await this.sdk.clone().connectWithPrivateKey(pkey, {
+      ...settings,
+      disableRetryOnSequenceError: true,
+    })
+
+    this.address = this.sdk.wallet.bech32Address
+  }
+
+  private checkInitialization() {
+    if (!this.initialized) {
+      throw new Error('client not initialized')
     }
+  }
+  /**
+   * Initializes the wallet.
+   *
+   * @param address? the address that you like to monitor
+   */
+  async initReadOnly(address: string) {
+    await this.init()
+    this.address = address
   }
 
   subscribeOrderBooks(markets: string[]) {
+    this.checkInitialization()
     const marketsToSubscribe = []
     for (const book of markets) {
       if (this.perpMarkets[book]) {
@@ -62,7 +92,20 @@ export class Client {
     this.orderbookChannels = marketsToSubscribe
   }
 
+  subscribeAccountData() {
+    this.checkInitialization()
+    if (!this.address) {
+      throw new Error('no address provided')
+    }
+    JSON.stringify({
+      id: `balances:${this.address}`,
+      method: 'subscribe',
+      params: { channels: [`balances:${this.address}`] },
+    })
+  }
+
   startWebsocket() {
+    this.checkInitialization()
     this.ws = new WebSocket('wss://ws-api.carbon.network/ws')
     this.ws.on('open', async () => {
       while (this.ws.readyState !== 1) {
@@ -93,7 +136,6 @@ export class Client {
           case 'books':
             const { result, update_type } = m
             const market = types[1]
-            console.log(update_type, m.channel)
 
             if (update_type === 'full_state') {
               const bids: PriceLevel[] = []
@@ -185,17 +227,10 @@ export class Client {
                     quantity: newAsksState[priceLevel],
                   }
                 })
-              console.log(bids, asks)
-              // .map((level: OrderBookWsEvent) => ({
-              //   price: level.price,
-              //   quantity: level.quantity,
-              // }))
-
-              // this.books[market] = {
-              //   bids: newBidsState,
-              //   asks: newAsksState,
-              // }
+              // TODO: implement ws callbacks
             }
+          case 'books':
+            console.log(update_type, m.channel)
         }
       }
     })
@@ -243,14 +278,39 @@ export class Client {
     })
     this.mapPerpMarkets(marketsAll.markets)
     for (const market of marketsAll.markets) {
-      let marketInfo = mapKeys(market, (v, k) => camelCase(k))
-      marketInfo = {
+      // let marketInfo = mapKeys(market, (v, k) => camelCase(k))
+      const marketInfo = {
         ...market,
         basePrecision: market.basePrecision.toNumber(),
         quotePrecision: market.quotePrecision.toNumber(),
         tickSize: new BigNumber(market.tickSize).shiftedBy(-18).toNumber(),
       }
       this.marketsInfo[market.name] = marketInfo
+    }
+  }
+  /* Gets all tokens parameters */
+  async updateTokensInfo() {
+    const tokensAll = await this.sdk!.query.coin.TokenAll({
+      pagination: {
+        limit: Long.fromNumber(1000),
+        countTotal: false,
+        reverse: false,
+        offset: Long.UZERO,
+        key: new Uint8Array(),
+      },
+    })
+    for (const token of tokensAll.tokens) {
+      const tokenInfo = {
+        ...token,
+        decimals: token.decimals.toNumber(),
+        chainId: token.chainId.toNumber(),
+        createdBlockHeight: token.createdBlockHeight.toNumber(),
+        bridgeId: token.bridgeId.toNumber(),
+      }
+
+      if (tokenInfo.isActive) {
+        this.tokensInfo[tokenInfo.id] = tokenInfo
+      }
     }
   }
 
@@ -290,7 +350,8 @@ export class Client {
 
 async function run() {
   const b = new Client()
-  await b.init()
+  // await b.initWallet()
+  await b.initReadOnly('swth1cseyz9v4krrajpea33u35gxzxm7gu0ltyvqv8e')
   b.subscribeOrderBooks(['BTC', 'ETH'])
   b.startWebsocket()
 

@@ -29,3 +29,7 @@ This client is considered Alpha software and is under develpoment at the moment.
 - [ ] Virtualization of market data state via websockets
 - [ ] Funding rate caculations
 - [ ] Deposits and withdrawls functionality
+
+### Examples
+
+WIP
