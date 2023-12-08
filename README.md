@@ -21,7 +21,7 @@ This client is considered Alpha software and is under develpoment at the moment.
 
 ## Features
 
-- [ ] Order submission with human readable inputs
+- [ ] Order submission with human readable inputs with tick and lot sizes rounding
 - [ ] Transform outputs to human readable values
 - [ ] Deals only with human friendly tickers instead of market ids (e.g. "ETH" -> "cmkt/117")
 - [ ] Dead man's switch for chain and indexer liveliness

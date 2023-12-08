@@ -12,8 +12,8 @@ export function toHumanPrice(price: string, params: MarketParams): number {
     .toNumber()
 }
 
-export function toHumanQuantity(quantity: string, params: MarketParams): number {
-  return new BigNumber(quantity).shiftedBy(-params.basePrecision).toNumber()
+export function toHumanQuantity(quantity: string, decimals: number): number {
+  return new BigNumber(quantity).shiftedBy(-decimals).toNumber()
 }
 
 export function sortDesc(lhs: any, rhs: any) {

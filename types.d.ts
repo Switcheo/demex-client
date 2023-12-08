@@ -1,3 +1,5 @@
+import BigNumber from 'bignumber.js'
+
 export interface Duration {
   /**
    * Signed seconds of the span of time. Must be from -315,576,000,000
@@ -63,6 +65,13 @@ export interface PriceLevel {
 export interface Book {
   asks: Array<PriceLevel>
   bids: Array<PriceLevel>
+}
+
+export interface Balance {
+  available: BigNumber
+  order: BigNumber
+  position: BigNumber
+  total: BigNumber
 }
 
 export interface BookSideMap {

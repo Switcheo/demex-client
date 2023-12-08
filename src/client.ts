@@ -7,7 +7,7 @@ import camelCase from 'lodash.camelcase'
 import mapKeys from 'lodash.mapkeys'
 import WebSocket from 'ws'
 
-import { MarketParams, Book, PriceLevel, BookSideMap, Token } from '../types'
+import { MarketParams, Book, PriceLevel, BookSideMap, Token, Balance } from '../types'
 import { sleep, toHumanPrice, toHumanQuantity, sortAsc, sortDesc } from './utils'
 
 export class Client {
@@ -21,16 +21,24 @@ export class Client {
   orderbookChannels: string[]
   address: string | null
   initialized: boolean = false
+  subscribeAccount: boolean = false
+  balances: { [denom: string]: Balance }
+  displayMarketsMap: { [name: string]: string }
 
   constructor(options?: CarbonSDKInitOpts) {
     this.tokensInfo = {}
     this.marketsInfo = {}
     this.perpMarkets = {}
-    this.books = {}
+    this.displayMarketsMap = {}
     this.sdk = null
     this.networkConfig = options
     this.orderbookChannels = []
+    this.subscribeAccount = false
     this.address = null
+
+    // virtualization
+    this.books = {}
+    this.balances = {}
   }
 
   private async init() {
@@ -91,17 +99,12 @@ export class Client {
     }
     this.orderbookChannels = marketsToSubscribe
   }
-
   subscribeAccountData() {
     this.checkInitialization()
     if (!this.address) {
       throw new Error('no address provided')
     }
-    JSON.stringify({
-      id: `balances:${this.address}`,
-      method: 'subscribe',
-      params: { channels: [`balances:${this.address}`] },
-    })
+    this.subscribeAccount = true
   }
 
   startWebsocket() {
@@ -124,6 +127,33 @@ export class Client {
           })
         )
       }
+      if (this.subscribeAccount) {
+        // this.ws.send(
+        //   JSON.stringify({
+        //     id: `positions`,
+        //     method: 'subscribe',
+        //     params: {
+        //       channels: [`positions:${this.address}`],
+        //     },
+        //   })
+        // )
+        this.ws.send(
+          JSON.stringify({
+            id: `orders`,
+            method: 'subscribe',
+            params: {
+              channels: [`orders:${this.address}`],
+            },
+          })
+        )
+        this.ws.send(
+          JSON.stringify({
+            id: `balances`,
+            method: 'subscribe',
+            params: { channels: [`balances:${this.address}`] },
+          })
+        )
+      }
     })
 
     this.ws.on('message', message => {
@@ -132,9 +162,9 @@ export class Client {
 
       if (m.channel) {
         const types = m.channel.split(':')
+        const { result, update_type } = m
         switch (types[0]) {
           case 'books':
-            const { result, update_type } = m
             const market = types[1]
 
             if (update_type === 'full_state') {
@@ -144,13 +174,19 @@ export class Client {
               for (const level of result.bids) {
                 bids.push({
                   price: toHumanPrice(level.price, this.marketsInfo[market]),
-                  quantity: toHumanQuantity(level.quantity, this.marketsInfo[market]),
+                  quantity: toHumanQuantity(
+                    level.quantity,
+                    this.marketsInfo[market].basePrecision
+                  ),
                 })
               }
               for (const level of result.asks) {
                 asks.push({
                   price: toHumanPrice(level.price, this.marketsInfo[market]),
-                  quantity: toHumanQuantity(level.quantity, this.marketsInfo[market]),
+                  quantity: toHumanQuantity(
+                    level.quantity,
+                    this.marketsInfo[market].basePrecision
+                  ),
                 })
               }
 
@@ -169,7 +205,10 @@ export class Client {
               }
               for (const item of m.result) {
                 const price = toHumanPrice(item.price, this.marketsInfo[market])
-                const quantity = toHumanQuantity(item.quantity, this.marketsInfo[market])
+                const quantity = toHumanQuantity(
+                  item.quantity,
+                  this.marketsInfo[market].basePrecision
+                )
                 switch (item.type) {
                   case 'new':
                     if (item.side === 'buy') {
@@ -227,10 +266,65 @@ export class Client {
                     quantity: newAsksState[priceLevel],
                   }
                 })
+              this.books[market] = {
+                bids,
+                asks,
+              }
               // TODO: implement ws callbacks
+            } else {
+              console.log('unknown update_type', update_type)
             }
-          case 'books':
-            console.log(update_type, m.channel)
+            break
+          case 'balances':
+            if (update_type === 'full_state') {
+              for (const r of result) {
+                const { denom, available, order, position } = r
+                const { decimals } = this.tokensInfo[denom]
+                this.balances[denom] = {
+                  available: new BigNumber(available).shiftedBy(-decimals),
+                  order: new BigNumber(order).shiftedBy(-decimals),
+                  position: new BigNumber(position).shiftedBy(-decimals),
+                  total: new BigNumber(available)
+                    .plus(order)
+                    .plus(position)
+                    .shiftedBy(-decimals),
+                }
+              }
+            } else {
+              for (const r of result) {
+                const { denom, available, order, position } = r
+                const { decimals } = this.tokensInfo[denom]
+                this.balances[denom] = {
+                  available: new BigNumber(available).shiftedBy(-decimals),
+                  order: new BigNumber(order).shiftedBy(-decimals),
+                  position: new BigNumber(position).shiftedBy(-decimals),
+                  total: new BigNumber(available)
+                    .plus(order)
+                    .plus(position)
+                    .shiftedBy(-decimals),
+                }
+              }
+            }
+            break
+          case 'orders':
+            if (update_type === 'full_state') {
+              for (const o of result.open_orders) {
+                console.log(o)
+                const { market } = o
+                const info = this.marketsInfo[market]
+                const order = {
+                  ...o,
+                  price: toHumanPrice(o.price, info),
+                  quantity: toHumanQuantity(o.quantity, info.basePrecision),
+                  available: toHumanQuantity(o.available, info.basePrecision),
+                  filled: toHumanQuantity(o.filled, info.basePrecision),
+                  stop_price: toHumanPrice(o.stop_price, info),
+                  avg_filled_price: toHumanPrice(o.avg_filled_price, info),
+                  allocated_margin_amount: toHumanQuantity(o.avg_filled_price, 18),
+                }
+                console.log(order)
+              }
+            }
         }
       }
     })
@@ -261,8 +355,10 @@ export class Client {
     const { block_height } = persistence
     const heightDifference = new BigNumber(latest_block_height).minus(block_height)
 
-    if (heightDifference.gt(10)) {
-      throw new Error('api is lagging behind the chain height by more than 10 blocks')
+    if (heightDifference.gt(15)) {
+      throw new Error(
+        `api is lagging behind the chain height by more than ${heightDifference} blocks`
+      )
     }
   }
   /* Gets all markets parameters */
@@ -286,13 +382,14 @@ export class Client {
         tickSize: new BigNumber(market.tickSize).shiftedBy(-18).toNumber(),
       }
       this.marketsInfo[market.name] = marketInfo
+      this.displayMarketsMap[marketInfo.displayName] = marketInfo.name
     }
   }
   /* Gets all tokens parameters */
   async updateTokensInfo() {
     const tokensAll = await this.sdk!.query.coin.TokenAll({
       pagination: {
-        limit: Long.fromNumber(1000),
+        limit: Long.fromNumber(1500),
         countTotal: false,
         reverse: false,
         offset: Long.UZERO,
@@ -309,7 +406,7 @@ export class Client {
       }
 
       if (tokenInfo.isActive) {
-        this.tokensInfo[tokenInfo.id] = tokenInfo
+        this.tokensInfo[tokenInfo.denom] = tokenInfo
       }
     }
   }
@@ -351,8 +448,10 @@ export class Client {
 async function run() {
   const b = new Client()
   // await b.initWallet()
-  await b.initReadOnly('swth1cseyz9v4krrajpea33u35gxzxm7gu0ltyvqv8e')
-  b.subscribeOrderBooks(['BTC', 'ETH'])
+  // await b.initReadOnly('swth1cseyz9v4krrajpea33u35gxzxm7gu0ltyvqv8e')
+  await b.initReadOnly('swth1ul4yjwg0a7d2exjtk93qtfk9rfpaguzn2xwsgw')
+  // b.subscribeOrderBooks(['BTC', 'ETH'])
+  b.subscribeAccountData()
   b.startWebsocket()
 
   // const m = b.getPerpMarketInfo('BTC')
