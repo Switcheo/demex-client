@@ -74,6 +74,48 @@ export interface Balance {
   total: BigNumber
 }
 
+export interface Order {
+  id: string
+  block_height: numbe
+  block_created_at: string
+  address: string
+  side: string
+  price: number
+  quantity: number
+  available: number
+  filled: number
+  status: string
+  order_type: string
+  initiator: string
+  time_in_force: string
+  stop_price: number
+  avg_filled_price: number
+  referral_address: string
+  referral_commission: number
+  allocated_margin_denom: string
+  allocated_margin_amount: number
+  last_updated_block_height: number
+}
+
+export interface Position {
+  market: string
+  address: string
+  side: string
+  opened_block_height: number
+  updated_block_height: number
+  realized_pnl: number
+  max_lots: number
+  total_fee_amount: number
+  avg_allocated_margin: number
+  avg_entry_price: number
+  avg_exit_price: number
+  allocated_margin: number
+  lots: number
+  opened_at: string
+  update_count: number
+  exit_count: number
+}
+
 export interface BookSideMap {
   [price: number]: number
 }

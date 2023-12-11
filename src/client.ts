@@ -7,8 +7,25 @@ import camelCase from 'lodash.camelcase'
 import mapKeys from 'lodash.mapkeys'
 import WebSocket from 'ws'
 
-import { MarketParams, Book, PriceLevel, BookSideMap, Token, Balance } from '../types'
-import { sleep, toHumanPrice, toHumanQuantity, sortAsc, sortDesc } from './utils'
+import {
+  MarketParams,
+  Book,
+  PriceLevel,
+  BookSideMap,
+  Token,
+  Balance,
+  Order,
+  Position,
+} from '../types'
+import {
+  sleep,
+  toHumanPrice,
+  toHumanQuantity,
+  sortAsc,
+  sortDesc,
+  humanizeOrder,
+  humanizePosition,
+} from './utils'
 
 export class Client {
   public sdk: CarbonSDK | null
@@ -23,6 +40,8 @@ export class Client {
   initialized: boolean = false
   subscribeAccount: boolean = false
   balances: { [denom: string]: Balance }
+  openOrders: { [market: string]: Order[] }
+  openPositions: { [market: string]: Position }
   displayMarketsMap: { [name: string]: string }
 
   constructor(options?: CarbonSDKInitOpts) {
@@ -39,6 +58,8 @@ export class Client {
     // virtualization
     this.books = {}
     this.balances = {}
+    this.openOrders = {}
+    this.openPositions = {}
   }
 
   private async init() {
@@ -128,15 +149,15 @@ export class Client {
         )
       }
       if (this.subscribeAccount) {
-        // this.ws.send(
-        //   JSON.stringify({
-        //     id: `positions`,
-        //     method: 'subscribe',
-        //     params: {
-        //       channels: [`positions:${this.address}`],
-        //     },
-        //   })
-        // )
+        this.ws.send(
+          JSON.stringify({
+            id: `positions`,
+            method: 'subscribe',
+            params: {
+              channels: [`positions:${this.address}`],
+            },
+          })
+        )
         this.ws.send(
           JSON.stringify({
             id: `orders`,
@@ -153,6 +174,7 @@ export class Client {
             params: { channels: [`balances:${this.address}`] },
           })
         )
+        // todo: fills
       }
     })
 
@@ -308,23 +330,59 @@ export class Client {
             break
           case 'orders':
             if (update_type === 'full_state') {
+              const openOrders = {}
               for (const o of result.open_orders) {
-                console.log(o)
                 const { market } = o
                 const info = this.marketsInfo[market]
-                const order = {
-                  ...o,
-                  price: toHumanPrice(o.price, info),
-                  quantity: toHumanQuantity(o.quantity, info.basePrecision),
-                  available: toHumanQuantity(o.available, info.basePrecision),
-                  filled: toHumanQuantity(o.filled, info.basePrecision),
-                  stop_price: toHumanPrice(o.stop_price, info),
-                  avg_filled_price: toHumanPrice(o.avg_filled_price, info),
-                  allocated_margin_amount: toHumanQuantity(o.avg_filled_price, 18),
+                const order = humanizeOrder(o, info)
+
+                if (!openOrders[market]) {
+                  openOrders[market] = []
                 }
-                console.log(order)
+                openOrders[market].push(order)
+              }
+              this.openOrders = openOrders
+            } else {
+              for (const o of result) {
+                const { market } = o
+                if (o.type === 'update') {
+                  const { status } = o
+                  const index = this.openOrders[market].findIndex(
+                    order => order.id === o.id
+                  )
+                  if (status === 'cancelled') {
+                    this.openOrders[market].splice(index, 1)
+                  } else {
+                    const info = this.marketsInfo[market]
+                    const order = humanizeOrder(o, info)
+                    this.openOrders[market][index] = order
+                  }
+                } else if (o.type === 'new') {
+                  const info = this.marketsInfo[market]
+                  const order = humanizeOrder(o, info)
+                  if (!this.openOrders[market]) {
+                    this.openOrders[market] = []
+                  }
+                  this.openOrders[market].push(order)
+                } else {
+                  console.log('this should not happen', o.type)
+                }
               }
             }
+            break
+          case 'positions':
+            if (update_type === 'full_state') {
+              for (const p of result.open_positions) {
+                const position = humanizePosition(p, this.marketsInfo[p.market])
+                this.openPositions[p.market] = position
+              }
+            } else {
+              for (const p of result) {
+                const position = humanizePosition(p, this.marketsInfo[p.market])
+                this.openPositions[p.market] = position
+              }
+            }
+            break
         }
       }
     })
@@ -449,7 +507,8 @@ async function run() {
   const b = new Client()
   // await b.initWallet()
   // await b.initReadOnly('swth1cseyz9v4krrajpea33u35gxzxm7gu0ltyvqv8e')
-  await b.initReadOnly('swth1ul4yjwg0a7d2exjtk93qtfk9rfpaguzn2xwsgw')
+  await b.initReadOnly('swth15ceph9j738ysz3jfec98ddu3y7lpxj6se7cwzj')
+  // await b.initReadOnly('swth1ul4yjwg0a7d2exjtk93qtfk9rfpaguzn2xwsgw')
   // b.subscribeOrderBooks(['BTC', 'ETH'])
   b.subscribeAccountData()
   b.startWebsocket()
