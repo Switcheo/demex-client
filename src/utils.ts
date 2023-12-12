@@ -1,5 +1,5 @@
 import BigNumber from 'bignumber.js'
-import { MarketParams, Order, Position } from '../types'
+import { Fill, MarketParams, Order, Position } from '../types'
 export function sleep(interval: number = 1000) {
   return new Promise(resolve => {
     setTimeout(resolve, interval)
@@ -42,6 +42,16 @@ export function humanizePosition(p: any, marketParams: MarketParams): Position {
     lots: toHumanQuantity(p.lots, marketParams.basePrecision),
   }
   return position
+}
+
+export function humanizeFill(f: any, marketParams: MarketParams): Fill {
+  const fill = {
+    ...f,
+    quantity: toHumanQuantity(f.quantity, marketParams.basePrecision),
+    price: toHumanPrice(f.price, marketParams),
+    fee_amount: toHumanQuantity(f.fee_amount, 18),
+  }
+  return fill
 }
 
 export function sortDesc(lhs: any, rhs: any) {

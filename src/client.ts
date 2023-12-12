@@ -25,6 +25,7 @@ import {
   sortDesc,
   humanizeOrder,
   humanizePosition,
+  humanizeFill,
 } from './utils'
 
 export class Client {
@@ -43,6 +44,7 @@ export class Client {
   openOrders: { [market: string]: Order[] }
   openPositions: { [market: string]: Position }
   displayMarketsMap: { [name: string]: string }
+  last200Fills: any[] // sorted by descending block height
 
   constructor(options?: CarbonSDKInitOpts) {
     this.tokensInfo = {}
@@ -60,6 +62,7 @@ export class Client {
     this.balances = {}
     this.openOrders = {}
     this.openPositions = {}
+    this.last200Fills = []
   }
 
   private async init() {
@@ -172,6 +175,13 @@ export class Client {
             id: `balances`,
             method: 'subscribe',
             params: { channels: [`balances:${this.address}`] },
+          })
+        )
+        this.ws.send(
+          JSON.stringify({
+            id: `account_trades`,
+            method: 'subscribe',
+            params: { channels: [`account_trades:${this.address}`] },
           })
         )
         // todo: fills
@@ -380,6 +390,28 @@ export class Client {
               for (const p of result) {
                 const position = humanizePosition(p, this.marketsInfo[p.market])
                 this.openPositions[p.market] = position
+              }
+            }
+            break
+          case 'account_trades':
+            if (update_type === 'full_state') {
+              const fills = []
+              for (const f of result) {
+                const fill = humanizeFill(f, this.marketsInfo[f.market])
+                fills.push(fill)
+              }
+              this.last200Fills = fills
+            } else {
+              const fills = this.last200Fills
+              for (const f of result) {
+                const fill = humanizeFill(f, this.marketsInfo[f.market])
+                fills.unshift(fill)
+              }
+              if (fills.length > 200) {
+                const slicedFills = fills.slice(0, 200)
+                this.last200Fills = slicedFills
+              } else {
+                this.last200Fills = fills
               }
             }
             break

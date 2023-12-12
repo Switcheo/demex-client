@@ -116,6 +116,20 @@ export interface Position {
   exit_count: number
 }
 
+export interface Fill {
+  order_id: string
+  market: string
+  side: string
+  quantity: number
+  price: number
+  fee_amount: number
+  fee_denom: string
+  address: string
+  block_height: number
+  block_created_at: string
+  trade_id: number
+}
+
 export interface BookSideMap {
   [price: number]: number
 }
