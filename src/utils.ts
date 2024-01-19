@@ -1,5 +1,6 @@
 import BigNumber from 'bignumber.js'
-import { Fill, MarketParams, Order, Position } from '../types'
+import { Fill, MarketParams, Order, Position, UserFill } from '../types'
+
 export function sleep(interval: number = 1000) {
   return new Promise(resolve => {
     setTimeout(resolve, interval)
@@ -49,7 +50,39 @@ export function humanizeFill(f: any, marketParams: MarketParams): Fill {
     ...f,
     quantity: toHumanQuantity(f.quantity, marketParams.basePrecision),
     price: toHumanPrice(f.price, marketParams),
-    fee_amount: toHumanQuantity(f.fee_amount, 18),
+    taker_fee_amount: toHumanQuantity(f.taker_fee_amount, 18),
+    taker_fee_kickback: toHumanQuantity(f.taker_fee_kickback, 18),
+    taker_fee_commission: toHumanQuantity(f.taker_fee_commission, 18),
+    maker_fee_amount: toHumanQuantity(f.maker_fee_amount, 18),
+    maker_fee_kickback: toHumanQuantity(f.maker_fee_kickback, 18),
+    maker_fee_commission: toHumanQuantity(f.maker_fee_commission, 18),
+  }
+  return fill
+}
+export function humanizeUserFill(
+  f: any,
+  marketParams: MarketParams,
+  address: string
+): UserFill {
+  const { id, market, quantity, price, block_height, block_created_at, taker_fee_denom } =
+    f
+  let side = f.taker_side
+  let fee_amount = f.taker_fee_amount
+  if (address === f.maker_address) {
+    side = f.maker_side
+    fee_amount = f.maker_fee_amount
+  }
+  const fill = {
+    id,
+    market,
+    quantity: toHumanQuantity(quantity, marketParams.basePrecision),
+    price: toHumanPrice(price, marketParams),
+    side,
+    address,
+    fee_denom: taker_fee_denom,
+    fee_amount: toHumanQuantity(fee_amount, 18),
+    block_height: parseInt(block_height),
+    block_created_at,
   }
   return fill
 }

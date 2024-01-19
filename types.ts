@@ -76,7 +76,7 @@ export interface Balance {
 
 export interface Order {
   id: string
-  block_height: numbe
+  block_height: number
   block_created_at: string
   address: string
   side: string
@@ -95,29 +95,31 @@ export interface Order {
   allocated_margin_denom: string
   allocated_margin_amount: number
   last_updated_block_height: number
+  symbol?: string
 }
 
 export interface Position {
-  market: string
-  address: string
-  side: string
-  opened_block_height: number
-  updated_block_height: number
-  realized_pnl: number
-  max_lots: number
-  total_fee_amount: number
-  avg_allocated_margin: number
+  market?: string
+  address?: string
+  side?: string
+  opened_block_height?: number
+  updated_block_height?: number
+  realized_pnl?: number
+  max_lots?: number
+  total_fee_amount?: number
+  avg_allocated_margin?: number
   avg_entry_price: number
-  avg_exit_price: number
+  avg_exit_price?: number
   allocated_margin: number
   lots: number
-  opened_at: string
-  update_count: number
-  exit_count: number
+  opened_at?: string
+  update_count?: number
+  exit_count?: number
+  symbol?: string
 }
 
-export interface Fill {
-  order_id: string
+export interface UserFill {
+  id: string
   market: string
   side: string
   quantity: number
@@ -127,11 +129,48 @@ export interface Fill {
   address: string
   block_height: number
   block_created_at: string
-  trade_id: number
+}
+
+export interface Fill {
+  id: string
+  block_height: string
+  block_created_at: string
+  market: string
+  price: number
+  quantity: number
+  liquidity: string
+  taker_id: string
+  taker_side: string
+  taker_address: string
+  taker_fee_amount: number
+  taker_fee_denom: string
+  taker_fee_kickback: number
+  taker_fee_commission: number
+  taker_fee_commission_address: string
+  maker_id: string
+  maker_side: string
+  maker_address: string
+  maker_fee_amount: number
+  maker_fee_denom: string
+  maker_fee_kickback: number
+  maker_fee_commission: number
+  maker_fee_commission_address: string
+  symbol?: string
 }
 
 export interface BookSideMap {
   [price: number]: number
+}
+
+export interface WalletInitOpts {
+  pkey?: string
+  mnemonic?: string
+  address?: string
+}
+
+export enum MAINNET_TOKENS {
+  USD = 'cgt/1',
+  SWTH = 'swth/1',
 }
 // export interface ClientOptions {
 //   network?: Carbon.Network

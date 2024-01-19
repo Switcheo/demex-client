@@ -16,6 +16,10 @@ import {
   Balance,
   Order,
   Position,
+  WalletInitOpts,
+  MAINNET_TOKENS,
+  Fill,
+  UserFill,
 } from '../types'
 import {
   sleep,
@@ -26,36 +30,45 @@ import {
   humanizeOrder,
   humanizePosition,
   humanizeFill,
+  humanizeUserFill,
 } from './utils'
 
 export class Client {
   public sdk: CarbonSDK | null
-  tokensInfo: { [name: string]: Token }
-  marketsInfo: { [name: string]: MarketParams }
-  perpMarkets: { [name: string]: MarketParams }
+  tokensInfo: { [market: string]: Token }
+  marketsInfo: { [market: string]: MarketParams }
+  perpMarkets: { [market: string]: MarketParams }
   networkConfig: CarbonSDKInitOpts
   ws: WebSocket
-  books: { [name: string]: Book }
   orderbookChannels: string[]
   address: string | null
-  initialized: boolean = false
   subscribeAccount: boolean = false
+  // mappings
+  marketIdtoSymbol: { [symbol: string]: string }
+  // checks
+  initialized: boolean = false
+  wsInitialized: boolean
+  wsState: string[]
+  // market data
+  books: { [market: string]: Book }
+  // account data
+  last200Fills: Fill[] // sorted by descending block height
   balances: { [denom: string]: Balance }
   openOrders: { [market: string]: Order[] }
   openPositions: { [market: string]: Position }
-  displayMarketsMap: { [name: string]: string }
-  last200Fills: any[] // sorted by descending block height
 
   constructor(options?: CarbonSDKInitOpts) {
     this.tokensInfo = {}
     this.marketsInfo = {}
     this.perpMarkets = {}
-    this.displayMarketsMap = {}
     this.sdk = null
     this.networkConfig = options
     this.orderbookChannels = []
     this.subscribeAccount = false
     this.address = null
+    this.wsInitialized = false
+    this.wsState = []
+    this.marketIdtoSymbol = {}
 
     // virtualization
     this.books = {}
@@ -65,7 +78,10 @@ export class Client {
     this.last200Fills = []
   }
 
-  private async init() {
+  /**
+   * Initializes the signer wallet.
+   */
+  async init(opts: WalletInitOpts) {
     if (this.initialized) {
       throw new Error('client already initialized')
     }
@@ -76,41 +92,35 @@ export class Client {
     if (settings.network === CarbonSDK.Network.MainNet) {
       await this.checkLiveliness()
     }
+
+    if (opts.pkey) {
+      this.sdk = await this.sdk.clone().connectWithPrivateKey(opts.pkey, {
+        ...settings,
+        disableRetryOnSequenceError: true,
+      })
+      this.address = this.sdk.wallet.bech32Address
+    }
+    if (opts.mnemonic) {
+      this.sdk = await this.sdk.clone().connectWithMnemonic(opts.mnemonic, {
+        ...settings,
+        disableRetryOnSequenceError: true,
+      })
+      this.address = this.sdk.wallet.bech32Address
+    }
+    if (opts.address) {
+      this.address = opts.address
+    }
+
     await this.updateMarketsInfo()
     await this.updateTokensInfo()
 
     this.initialized = true
   }
 
-  /**
-   * Initializes the wallet.
-   *
-   * @param pkey the private key to use for signing transactions. If not provided, the client will not be able to perform any user actions.
-   */
-  async initWallet(pkey: string | Buffer) {
-    await this.init()
-    const settings = this.networkConfig || { network: CarbonSDK.Network.MainNet }
-    this.sdk = await this.sdk.clone().connectWithPrivateKey(pkey, {
-      ...settings,
-      disableRetryOnSequenceError: true,
-    })
-
-    this.address = this.sdk.wallet.bech32Address
-  }
-
   private checkInitialization() {
     if (!this.initialized) {
       throw new Error('client not initialized')
     }
-  }
-  /**
-   * Initializes the wallet.
-   *
-   * @param address? the address that you like to monitor
-   */
-  async initReadOnly(address: string) {
-    await this.init()
-    this.address = address
   }
 
   subscribeOrderBooks(markets: string[]) {
@@ -131,7 +141,18 @@ export class Client {
     this.subscribeAccount = true
   }
 
-  startWebsocket() {
+  private updateWsState(channel: string) {
+    const state = this.wsState
+    const index = state.indexOf(channel)
+
+    if (index !== -1) {
+      // Use splice to remove the element at the found index
+      state.splice(index, 1)
+    }
+    this.wsState = state
+  }
+
+  async startWebsocket() {
     this.checkInitialization()
     this.ws = new WebSocket('wss://ws-api.carbon.network/ws')
     this.ws.on('open', async () => {
@@ -150,6 +171,7 @@ export class Client {
             },
           })
         )
+        this.wsState = this.wsState.concat(this.orderbookChannels)
       }
       if (this.subscribeAccount) {
         this.ws.send(
@@ -184,14 +206,18 @@ export class Client {
             params: { channels: [`account_trades:${this.address}`] },
           })
         )
-        // todo: fills
+        this.wsState = this.wsState.concat([
+          `account_trades:${this.address}`,
+          `balances:${this.address}`,
+          `positions:${this.address}`,
+          `orders:${this.address}`,
+        ])
       }
+      this.wsInitialized = true
     })
 
     this.ws.on('message', message => {
       const m = JSON.parse(message as any)
-      // console.log(m)
-
       if (m.channel) {
         const types = m.channel.split(':')
         const { result, update_type } = m
@@ -226,6 +252,7 @@ export class Client {
                 bids,
                 asks,
               }
+              this.updateWsState(m.channel)
             } else if (update_type === 'delta') {
               const newBidsState: BookSideMap = {}
               const newAsksState: BookSideMap = {}
@@ -322,6 +349,7 @@ export class Client {
                     .shiftedBy(-decimals),
                 }
               }
+              this.updateWsState(m.channel)
             } else {
               for (const r of result) {
                 const { denom, available, order, position } = r
@@ -352,6 +380,7 @@ export class Client {
                 openOrders[market].push(order)
               }
               this.openOrders = openOrders
+              this.updateWsState(m.channel)
             } else {
               for (const o of result) {
                 const { market } = o
@@ -386,6 +415,7 @@ export class Client {
                 const position = humanizePosition(p, this.marketsInfo[p.market])
                 this.openPositions[p.market] = position
               }
+              this.updateWsState(m.channel)
             } else {
               for (const p of result) {
                 const position = humanizePosition(p, this.marketsInfo[p.market])
@@ -400,7 +430,9 @@ export class Client {
                 const fill = humanizeFill(f, this.marketsInfo[f.market])
                 fills.push(fill)
               }
+              console.log(fills.length)
               this.last200Fills = fills
+              this.updateWsState(m.channel)
             } else {
               const fills = this.last200Fills
               for (const f of result) {
@@ -418,6 +450,12 @@ export class Client {
         }
       }
     })
+    while (!this.wsInitialized) {
+      await sleep(100)
+    }
+    while (this.wsState.length > 0) {
+      await sleep(1000)
+    }
   }
 
   /**
@@ -472,7 +510,6 @@ export class Client {
         tickSize: new BigNumber(market.tickSize).shiftedBy(-18).toNumber(),
       }
       this.marketsInfo[market.name] = marketInfo
-      this.displayMarketsMap[marketInfo.displayName] = marketInfo.name
     }
   }
   /* Gets all tokens parameters */
@@ -515,6 +552,7 @@ export class Client {
         marketInfo.isActive
       ) {
         const key = marketInfo.displayName.split('_')[0]
+        this.marketIdtoSymbol[marketInfo.name] = key
         perps[key] = {
           ...market,
           basePrecision: market.basePrecision.toNumber(),
@@ -531,22 +569,114 @@ export class Client {
    * @param symbol ticker
    */
   getPerpMarketInfo(ticker: string) {
-    return this.perpMarkets[ticker.toUpperCase()]
+    if (this.perpMarkets[ticker]) {
+      return this.perpMarkets[ticker.toUpperCase()]
+    }
+    throw new Error('market not found')
+  }
+
+  //
+  // GETTERS
+  //
+
+  getOrderBook(market: string): Book {
+    const id = this.getPerpMarketInfo(market).name
+    if (!this.books[id]) {
+      throw new Error(`${market} not found in order books. Did you subscribe?`)
+    }
+    return this.books[id]
+  }
+
+  getBalance(denom: MAINNET_TOKENS): Balance {
+    if (this.balances[denom]) {
+      return this.balances[denom]
+    }
+    return {
+      available: new BigNumber(0),
+      order: new BigNumber(0),
+      position: new BigNumber(0),
+      total: new BigNumber(0),
+    }
+  }
+
+  getPositions(): Position[] {
+    const positions = []
+    for (const market of Object.keys(this.openPositions)) {
+      const position = this.openPositions[market]
+      position.symbol = this.marketIdtoSymbol[market]
+      positions.push(position)
+    }
+    return positions
+  }
+
+  getPosition(market: string): Position {
+    const empty = {
+      symbol: market,
+      allocated_margin: 0,
+      avg_entry_price: 0,
+      lots: 0,
+      side: '',
+    }
+
+    if (!this.perpMarkets[market]) return empty
+
+    const id = this.perpMarkets[market].name
+
+    if (this.openPositions[id]) {
+      const position = this.openPositions[id]
+      position.symbol = market
+      return position
+    }
+
+    return empty
+  }
+
+  getOpenOrders(market?: string): Order[] {
+    const orders = []
+    const markets = Object.keys(this.openOrders)
+    for (const m of markets) {
+      this.openOrders[m].forEach(order => {
+        orders.push({ ...order, symbol: this.marketIdtoSymbol[m] })
+      })
+    }
+
+    if (market) {
+      return orders.filter(order => order.symbol === market)
+    }
+    return orders
+  }
+
+  async getUserTrades(market?: string): Promise<UserFill[]> {
+    // uses the API endpoint instead of GRPC as the API endpoint is more flexible
+    let url = `https://api.carbon.network/carbon/broker/v1/trades?pagination.limit=200&pagination.count_total=false&address=${this.address}`
+    if (market) {
+      const marketId = this.getPerpMarketInfo(market).name
+      url = `${url}&market=${marketId}`
+    }
+
+    const { trades } = (await axios.get(url)).data
+    const fills = trades.map(fill => {
+      const symbol = this.marketIdtoSymbol[fill.market]
+      const hFill = humanizeUserFill(fill, this.marketsInfo[fill.market], this.address)
+      return { ...hFill, symbol }
+    })
+    return fills
+  }
+
+  async getTrades(market?: string): Promise<Fill[]> {
+    // uses the API endpoint instead of GRPC as the API endpoint is more flexible
+    let url = `https://api.carbon.network/carbon/broker/v1/trades?pagination.limit=200&pagination.count_total=false`
+    if (market) {
+      const marketId = this.getPerpMarketInfo(market).name
+      url = `${url}&market=${marketId}`
+    }
+
+    const { trades } = (await axios.get(url)).data
+    const fills = trades.map(fill => {
+      const symbol = this.marketIdtoSymbol[fill.market]
+      const hFill = humanizeFill(fill, this.marketsInfo[fill.market])
+      return { ...hFill, symbol }
+    })
+    return fills
   }
 }
-
-async function run() {
-  const b = new Client()
-  // await b.initWallet()
-  // await b.initReadOnly('swth1cseyz9v4krrajpea33u35gxzxm7gu0ltyvqv8e')
-  await b.initReadOnly('swth15ceph9j738ysz3jfec98ddu3y7lpxj6se7cwzj')
-  // await b.initReadOnly('swth1ul4yjwg0a7d2exjtk93qtfk9rfpaguzn2xwsgw')
-  // b.subscribeOrderBooks(['BTC', 'ETH'])
-  b.subscribeAccountData()
-  b.startWebsocket()
-
-  // const m = b.getPerpMarketInfo('BTC')
-  // console.log(m)
-}
-
-run()
