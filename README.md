@@ -30,6 +30,51 @@ This client is considered Alpha software and is under develpoment at the moment.
 - [ ] Funding rate caculations
 - [ ] Wrapped Deposits and withdrawls transfer functions
 
-### Examples
+### Data Fetching Example
 
-WIP
+```
+import { Client } from './client'
+import 'dotenv/config'
+import { MAINNET_TOKENS } from '../types'
+
+
+async function run() {
+  const bot = new Client()
+  await bot.init({ mnemonic: process.env.MNEMONIC })
+  bot.subscribeOrderBooks(['BTC', 'ETH'])
+  bot.subscribeAccountData()
+
+  await bot.startWebsocket()
+
+  // MARKET DATA
+
+  // order book
+  const orderBook = bot.getOrderBook('ETH')
+
+  // recent trades
+    const recentTrades = await bot.getTrades('BTC')
+
+  // ACCOUNT DATA
+
+  // user balance
+  const usdBalance = bot.getBalance(MAINNET_TOKENS.USD)
+
+  // positions
+  const positions = bot.getPositions()
+
+  // position
+  const position = bot.getPosition('BTC')
+
+  // open orders
+  const orders = bot.getOpenOrders('BTC')
+
+  // account trades
+  const userTrades = await bot.getUserTrades('BTC')
+}
+
+// start anonymous function
+;(async () => {
+  await run()
+})()
+
+```
