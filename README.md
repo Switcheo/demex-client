@@ -13,7 +13,9 @@
 
 This is an opinionated typescript client that wraps around carbon-js-sdk that aims to proivde a simple way to programmatically trade on Carbon's Perpetuals markets.
 
-The client attempts to fetch data over websockets and caches it in memory whenever possible with the exception of trades and funding rates data. As a result, data fetching functions that are made via GRPC or API will be made asynchronously while data fetching from the local cache will be made synchronously.
+The client attempts to fetch data over websockets and caches it in memory whenever possible with the exception for trades and funding rates data.
+
+As a result, data fetching functions that are made via GRPC or API have to be made asynchronously while data fetching from the local cache can be made synchronously.
 
 Spot market trading is not supported on this client at the moment.
 Only Mainnet is supported on this client at the moment.
