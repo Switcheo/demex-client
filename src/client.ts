@@ -547,12 +547,19 @@ export class Client {
   }
 
   async fetchOraclePrices(): Promise<void> {
-    const { results } = await this.sdk!.query.oracle.ResultsLatest({
-      oracleId: '',
-    })
-    for (const i of results) {
-      const symbol = this.oraclesIdtoSymbol[i.oracleId]
-      this.prices[symbol] = parseFloat(i.data)
+    while (true) {
+      try {
+        const { results } = await this.sdk!.query.oracle.ResultsLatest({
+          oracleId: '',
+        })
+        for (const i of results) {
+          const symbol = this.oraclesIdtoSymbol[i.oracleId]
+          this.prices[symbol] = parseFloat(i.data)
+        }
+      } catch (e) {
+      } finally {
+        await sleep(5555)
+      }
     }
   }
 
