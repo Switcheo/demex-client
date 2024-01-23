@@ -55,6 +55,7 @@ export interface MarketParams {
   expiryTime?: Date
   basePrecision: number
   quotePrecision: number
+  indexOracleId: string
 }
 
 export interface PriceLevel {
@@ -116,6 +117,8 @@ export interface Position {
   update_count?: number
   exit_count?: number
   symbol?: string
+  index_price?: number
+  unrealized_pnl?: number
 }
 
 export interface UserFill {

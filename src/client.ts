@@ -45,12 +45,14 @@ export class Client {
   subscribeAccount: boolean = false
   // mappings
   marketIdtoSymbol: { [symbol: string]: string }
+  oraclesIdtoSymbol: { [symbol: string]: string }
   // checks
   initialized: boolean = false
   wsInitialized: boolean
   wsState: string[]
   // market data
   books: { [market: string]: Book }
+  prices: { [market: string]: number }
   // account data
   last200Fills: Fill[] // sorted by descending block height
   balances: { [denom: string]: Balance }
@@ -69,6 +71,7 @@ export class Client {
     this.wsInitialized = false
     this.wsState = []
     this.marketIdtoSymbol = {}
+    this.oraclesIdtoSymbol = {}
 
     // virtualization
     this.books = {}
@@ -76,6 +79,9 @@ export class Client {
     this.openOrders = {}
     this.openPositions = {}
     this.last200Fills = []
+
+    // market data
+    this.prices = {}
   }
 
   /**
@@ -113,6 +119,8 @@ export class Client {
 
     await this.updateMarketsInfo()
     await this.updateTokensInfo()
+
+    await this.fetchOraclePrices()
 
     this.initialized = true
   }
@@ -538,6 +546,16 @@ export class Client {
     }
   }
 
+  async fetchOraclePrices(): Promise<void> {
+    const { results } = await this.sdk!.query.oracle.ResultsLatest({
+      oracleId: '',
+    })
+    for (const i of results) {
+      const symbol = this.oraclesIdtoSymbol[i.oracleId]
+      this.prices[symbol] = parseFloat(i.data)
+    }
+  }
+
   /**
    * Helper function to retrive all perp markets and assign the underlying market symbol as a key
    */
@@ -559,6 +577,7 @@ export class Client {
           quotePrecision: market.quotePrecision.toNumber(),
           tickSize: new BigNumber(market.tickSize).shiftedBy(-18).toNumber(),
         }
+        this.oraclesIdtoSymbol[market.indexOracleId] = market.displayName.split('_')[0]
       }
     }
     this.perpMarkets = perps
@@ -599,11 +618,19 @@ export class Client {
     }
   }
 
-  getPositions(): Position[] {
+  // @note: uses index price to estimate the uPnL instead of mark price
+  async getPositions(): Promise<Position[]> {
     const positions = []
     for (const market of Object.keys(this.openPositions)) {
       const position = this.openPositions[market]
       position.symbol = this.marketIdtoSymbol[market]
+      position.index_price = this.prices[position.symbol]
+
+      position.unrealized_pnl =
+        position.lots > 0
+          ? (position.index_price - position.avg_entry_price) * position.lots
+          : (position.avg_entry_price - position.index_price) * position.lots
+      this.marketsInfo[market]
       positions.push(position)
     }
     return positions
@@ -625,6 +652,12 @@ export class Client {
     if (this.openPositions[id]) {
       const position = this.openPositions[id]
       position.symbol = market
+      position.index_price = this.prices[position.symbol]
+
+      position.unrealized_pnl =
+        position.lots > 0
+          ? (position.index_price - position.avg_entry_price) * position.lots
+          : (position.avg_entry_price - position.index_price) * position.lots
       return position
     }
 

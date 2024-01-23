@@ -28,7 +28,8 @@ This client is considered Alpha software and is under develpoment at the moment.
 
 - [ ] Order submission with human readable inputs with tick and lot sizes rounding
 - [ ] Transform outputs to human readable values
-- [ ] Accepts human friendly tickers instead of market ids (e.g. "ETH_PERP.USD" -> "cmkt/117")
+- [ ] Uses human friendly tickers instead of market ids (e.g. "ETH" -> "cmkt/117")
+- [ ] Wrap position response with index price and unrealized profit & loss
 - [ ] Dead man's switch for chain and indexer liveliness
 - [ ] Virtualization of user account state via websockets
 - [ ] Virtualization of market data state via websockets
