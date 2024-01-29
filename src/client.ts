@@ -1,11 +1,14 @@
 import axios from 'axios'
 import BigNumber from 'bignumber.js'
-import { CarbonSDK, CarbonSDKInitOpts } from 'carbon-js-sdk'
+import { CarbonSDK, CarbonSDKInitOpts, CarbonTx } from 'carbon-js-sdk'
+import { MsgCreateOrder } from 'carbon-js-sdk/lib/codec/Switcheo/carbon/order/tx'
 import dayjs from 'dayjs'
 import Long from 'long'
 import camelCase from 'lodash.camelcase'
 import mapKeys from 'lodash.mapkeys'
 import WebSocket from 'ws'
+
+BigNumber.set({ EXPONENTIAL_AT: 100 })
 
 import {
   MarketParams,
@@ -20,7 +23,13 @@ import {
   MAINNET_TOKENS,
   Fill,
   UserFill,
-} from '../types'
+  UsageMultiplier,
+  MarketStats,
+  OrderParams,
+  OrderSide,
+  Txn,
+  UserLeverage,
+} from './types'
 import {
   sleep,
   toHumanPrice,
@@ -52,7 +61,16 @@ export class Client {
   wsState: string[]
   // market data
   books: { [market: string]: Book }
-  prices: { [market: string]: number }
+  stats: {
+    [market: string]: {
+      premiumRate: number
+      markPrice: number
+      indexPrice: number
+      volume: number
+      lastPrice: number
+      fundingRate?: number
+    }
+  }
   // account data
   last200Fills: Fill[] // sorted by descending block height
   balances: { [denom: string]: Balance }
@@ -81,7 +99,7 @@ export class Client {
     this.last200Fills = []
 
     // market data
-    this.prices = {}
+    this.stats = {}
   }
 
   /**
@@ -117,11 +135,12 @@ export class Client {
       this.address = opts.address
     }
 
+    console.log(`wallet address: ${this.address}`)
+
     await this.updateMarketsInfo()
     await this.updateTokensInfo()
-
-    await this.fetchOraclePrices()
-
+    // this.fetchOraclePrices()
+    this.fetchMarketStats()
     this.initialized = true
   }
 
@@ -438,7 +457,6 @@ export class Client {
                 const fill = humanizeFill(f, this.marketsInfo[f.market])
                 fills.push(fill)
               }
-              console.log(fills.length)
               this.last200Fills = fills
               this.updateWsState(m.channel)
             } else {
@@ -546,15 +564,52 @@ export class Client {
     }
   }
 
-  async fetchOraclePrices(): Promise<void> {
+  // async fetchOraclePrices(): Promise<void> {
+  //   while (true) {
+  //     try {
+  //       const { results } = await this.sdk!.query.oracle.ResultsLatest({
+  //         oracleId: '',
+  //       })
+  //       for (const i of results) {
+  //         const symbol = this.oraclesIdtoSymbol[i.oracleId]
+  //         this.prices[symbol] = parseFloat(i.data)
+  //       }
+  //     } catch (e) {
+  //     } finally {
+  //       await sleep(5555)
+  //     }
+  //   }
+  // }
+  async fetchMarketStats(): Promise<void> {
     while (true) {
       try {
-        const { results } = await this.sdk!.query.oracle.ResultsLatest({
-          oracleId: '',
-        })
-        for (const i of results) {
-          const symbol = this.oraclesIdtoSymbol[i.oracleId]
-          this.prices[symbol] = parseFloat(i.data)
+        const url = 'https://api.carbon.network/carbon/marketstats/v1/stats'
+        const { marketstats } = (await axios.get(url)).data
+        for (const m of marketstats) {
+          if (m.market_type === 'futures') {
+            const info = this.marketsInfo[m.market]
+            if (info.isActive) {
+              const { basePrecision, quotePrecision } = info
+              const markPrice = new BigNumber(m.mark_price).shiftedBy(
+                basePrecision - quotePrecision
+              )
+              const indexPrice = new BigNumber(m.index_price).shiftedBy(
+                basePrecision - quotePrecision
+              )
+              const lastPrice = new BigNumber(m.last_price).shiftedBy(
+                basePrecision - quotePrecision
+              )
+              const day_quote_volume = new BigNumber(m.day_quote_volume).shiftedBy(-18)
+
+              this.stats[m.market] = {
+                markPrice: markPrice.dp(indexPrice.dp()).toNumber(),
+                indexPrice: indexPrice.toNumber(),
+                premiumRate: parseFloat(m.premium_rate),
+                volume: day_quote_volume.dp(0).toNumber(),
+                lastPrice: lastPrice.toNumber(),
+              }
+            }
+          }
         }
       } catch (e) {
       } finally {
@@ -626,17 +681,17 @@ export class Client {
   }
 
   // @note: uses index price to estimate the uPnL instead of mark price
-  async getPositions(): Promise<Position[]> {
+  getPositions(): Position[] {
     const positions = []
     for (const market of Object.keys(this.openPositions)) {
       const position = this.openPositions[market]
       position.symbol = this.marketIdtoSymbol[market]
-      position.index_price = this.prices[position.symbol]
+      position.mark_price = this.stats[market].markPrice
 
       position.unrealized_pnl =
         position.lots > 0
-          ? (position.index_price - position.avg_entry_price) * position.lots
-          : (position.avg_entry_price - position.index_price) * position.lots
+          ? (position.mark_price - position.avg_entry_price) * position.lots
+          : (position.avg_entry_price - position.mark_price) * position.lots
       this.marketsInfo[market]
       positions.push(position)
     }
@@ -659,12 +714,12 @@ export class Client {
     if (this.openPositions[id]) {
       const position = this.openPositions[id]
       position.symbol = market
-      position.index_price = this.prices[position.symbol]
+      position.mark_price = this.stats[id].markPrice
 
       position.unrealized_pnl =
         position.lots > 0
-          ? (position.index_price - position.avg_entry_price) * position.lots
-          : (position.avg_entry_price - position.index_price) * position.lots
+          ? (position.mark_price - position.avg_entry_price) * position.lots
+          : (position.avg_entry_price - position.mark_price) * position.lots
       return position
     }
 
@@ -718,5 +773,317 @@ export class Client {
       return { ...hFill, symbol }
     })
     return fills
+  }
+
+  /**
+   * Helpers
+   */
+  async getUsageMultiplier(): Promise<UsageMultiplier> {
+    const usageMultiplierData = {}
+    const usageMultiplier = await axios.get(
+      'https://api.carbon.network/carbon/perpspool/v1/markets_liquidity_usage_multiplier'
+    )
+    for (const mkt of usageMultiplier.data.markets_liquidity_usage_multiplier) {
+      const { market, multiplier } = mkt
+      usageMultiplierData[market] = new BigNumber(multiplier)
+    }
+
+    return usageMultiplierData
+  }
+
+  async getPerpPools(): Promise<any> {
+    const pools = await axios.get('https://api.carbon.network/carbon/perpspool/v1/pools')
+    return pools.data.pools
+  }
+
+  getPoolNav(poolStats, id) {
+    for (const p of poolStats) {
+      if (p.pool_id === id) {
+        return new BigNumber(p.total_nav_amount).shiftedBy(-18)
+      }
+    }
+  }
+
+  async getMarketStats(): Promise<MarketStats[]> {
+    const usageMultiplier = await this.getUsageMultiplier()
+    const perpPools = await this.getPerpPools()
+    const poolStats = (
+      await axios.get('https://api.carbon.network/carbon/perpspool/v1/pools/pool_info')
+    ).data.pools
+    // funding rate interval
+    const interval = (
+      await axios.get('https://api.carbon.network/carbon/market/v1/controlled_params')
+    ).data.controlled_params.perpetuals_funding_interval
+    const intervalRate = new BigNumber(interval.slice(0, -1))
+
+    const poolsConfig = {}
+    for (const p of perpPools) {
+      const { pool, registered_markets } = p
+      const maxBorrowFee = new BigNumber(pool.base_borrow_fee_per_funding_interval)
+      const vaultAddress = pool.vault_address
+      // get pool utilisation rate
+      const positions = (
+        await axios.get(
+          `https://api.carbon.network/carbon/position/v1/positions?address=${vaultAddress}&status=open`
+        )
+      ).data.positions
+
+      for (const mkt of registered_markets) {
+        const { market_id, max_liquidity_ratio, quote_shape, borrow_fee_multiplier } = mkt
+        const totalQuoteRatio = quote_shape.reduce((prev: BigNumber, quote) => {
+          return prev.plus(quote.quote_amount_ratio)
+        }, new BigNumber(0))
+        const borrowFeeMultiplier = new BigNumber(borrow_fee_multiplier)
+        poolsConfig[market_id] = {
+          maxLiquidityRatio: new BigNumber(max_liquidity_ratio),
+          borrowFeeMultiplier: new BigNumber(borrow_fee_multiplier),
+          totalQuoteRatio,
+        }
+
+        const maxLiquidityRatio = new BigNumber(max_liquidity_ratio)
+        const poolNav = this.getPoolNav(poolStats, pool.id)
+        const allocatedLiquidity = maxLiquidityRatio.times(totalQuoteRatio).times(poolNav)
+
+        const position = positions.find(pos => pos.market === market_id)
+
+        const marketInfo = this.marketsInfo[market_id]
+        const positionHuman = humanizePosition(position, marketInfo)
+        const positionMargin = position
+          ? new BigNumber(positionHuman.allocated_margin)
+          : new BigNumber(0)
+        const avgEntryPrice = position
+          ? new BigNumber(positionHuman.avg_entry_price)
+          : new BigNumber(0)
+        const lots = position ? new BigNumber(positionHuman.lots) : new BigNumber(0)
+        // // get mark price to calculate uPnL
+        const markPrice = new BigNumber(this.stats[market_id].markPrice)
+        const upnl = markPrice.minus(avgEntryPrice).times(lots)
+        const positionValue = positionMargin.plus(upnl)
+
+        let utilizationRate = positionValue.div(allocatedLiquidity)
+
+        if (utilizationRate.gt(1)) {
+          utilizationRate = new BigNumber(1)
+        }
+        if (utilizationRate.lt(0)) {
+          utilizationRate = new BigNumber(0)
+        }
+
+        const marketLiquidityUsageMultiplier = usageMultiplier[market_id]
+
+        // derive borrow rate
+        let borrowRate = utilizationRate
+          .times(borrowFeeMultiplier)
+          .times(marketLiquidityUsageMultiplier)
+          .times(maxBorrowFee)
+
+        if (lots.isPositive()) {
+          borrowRate = borrowRate.times(new BigNumber(-1))
+        }
+        // TODO: derive premium rate
+        // premium rate
+        const rawPremium = this.stats[market_id].premiumRate
+
+        const premiumRate = new BigNumber(rawPremium).div(
+          new BigNumber(86400).div(intervalRate)
+        )
+        const premiumRateAnnual = premiumRate
+          .times(60)
+          .times(24 * 365)
+          .times(100)
+        const borrowRateAnnual = borrowRate
+          .times(60)
+          .times(24 * 365)
+          .times(100)
+        const rate = premiumRateAnnual.plus(borrowRateAnnual)
+        const symbol = this.marketIdtoSymbol[market_id]
+        this.stats[market_id].fundingRate = rate.dp(2).toNumber()
+      }
+    }
+    const markets = Object.keys(this.stats)
+
+    const stats = markets.map(m => {
+      const premiumRate = new BigNumber(this.stats[m].premiumRate).div(
+        new BigNumber(86400).div(intervalRate)
+      )
+      const premiumRateAnnual = new BigNumber(premiumRate)
+        .times(60)
+        .times(24 * 365)
+        .times(100)
+      return {
+        fundingRate: this.stats[m].fundingRate
+          ? this.stats[m].fundingRate
+          : premiumRateAnnual.dp(2).toNumber(),
+        id: m,
+        indexPrice: this.stats[m].indexPrice,
+        lastPrice: this.stats[m].lastPrice,
+        markPrice: this.stats[m].markPrice,
+        symbol: this.marketIdtoSymbol[m],
+        volume: this.stats[m].volume,
+      }
+    })
+    stats.sort((a, b) => {
+      return b.volume - a.volume
+    })
+
+    return stats
+  }
+
+  async getMarketsLeverage(): Promise<UserLeverage[]> {
+    const leverages = []
+    const { marketLeverages } = await this.sdk.query.leverage.LeverageAll({
+      address: this.address,
+    })
+
+    for (const i of marketLeverages) {
+      const { market, leverage } = i
+      const symbol = this.marketIdtoSymbol[market]
+
+      if (symbol) {
+        leverages.push({
+          market: symbol,
+          leverage: new BigNumber(leverage).shiftedBy(-18).dp(2).toNumber(),
+        })
+      }
+    }
+
+    return leverages
+  }
+
+  roundPrice(price, side, market) {
+    const { tickSize } = this.marketsInfo[market]
+    if (side === OrderSide.Sell)
+      return price.div(tickSize).integerValue(BigNumber.ROUND_CEIL).times(tickSize)
+    return price.div(tickSize).integerValue(BigNumber.ROUND_DOWN).times(tickSize)
+  }
+
+  roundQuantity(quantity, market) {
+    const { lotSize } = this.marketsInfo[market]
+    return quantity.div(lotSize).integerValue(BigNumber.ROUND_DOWN).times(lotSize)
+  }
+
+  /* SIGNER FUNCTIONS */
+
+  // @note: order id is not returned in the transaction response.
+  // Use getOpenOrders to get the order id
+  async submitOrder(params: OrderParams): Promise<Txn> {
+    const market = this.perpMarkets[params.market].name
+    const { basePrecision, quotePrecision } = this.perpMarkets[params.market]
+
+    const quantityBN = new BigNumber(params.quantity).shiftedBy(basePrecision)
+    const quantity = this.roundQuantity(quantityBN, market).toString(10)
+
+    const priceAdjustment = basePrecision - quotePrecision
+    const priceBN = new BigNumber(params.price).shiftedBy(-priceAdjustment)
+    const price = this.roundPrice(priceBN, params.side, market).shiftedBy(18).toString()
+
+    const value = MsgCreateOrder.fromPartial({
+      creator: this.sdk.wallet.bech32Address,
+      isPostOnly: false,
+      isReduceOnly: typeof params.isPostOnly === 'undefined' ? false : params.isPostOnly,
+      market: market,
+      orderType: 'limit',
+      price,
+      quantity,
+      side: params.side,
+      referralAddress: params.referrer_address ? params.referrer_address : '',
+      referralCommission: 15,
+      referralKickback: 0,
+      timeInForce: params.tif ? params.tif : 'gtc',
+    })
+    const message = {
+      typeUrl: CarbonTx.Types.MsgCreateOrder,
+      value,
+    }
+
+    const tx = (await this.sdk.wallet.sendTx(message)) as any
+
+    if (tx.code === 0) {
+      // tx succeeded
+      return {
+        success: true,
+        txHash: tx.transactionHash,
+        message: '',
+      }
+    }
+    return {
+      success: false,
+      txHash: tx.transactionHash,
+      message: '', // TODO: provide more details
+    }
+  }
+
+  async cancelAll(market: string): Promise<Txn> {
+    const id = this.perpMarkets[market].name
+    const tx = (await this.sdk.wallet.sendTx({
+      typeUrl: CarbonTx.Types.MsgCancelAll,
+      value: {
+        creator: this.sdk.wallet.bech32Address,
+        market: id,
+      },
+    })) as any
+
+    if (tx.code === 0) {
+      // tx succeeded
+      return {
+        success: true,
+        txHash: tx.transactionHash,
+        message: '',
+      }
+    }
+    return {
+      success: false,
+      txHash: tx.transactionHash,
+      message: '', // TODO: provide more details
+    }
+  }
+
+  async cancelOrder(orderId: string): Promise<Txn> {
+    const tx = (await this.sdk.wallet.sendTx({
+      typeUrl: CarbonTx.Types.MsgCancelOrder,
+      value: {
+        creator: this.sdk.wallet.bech32Address,
+        orderId,
+      },
+    })) as any
+
+    if (tx.code === 0) {
+      // tx succeeded
+      return {
+        success: true,
+        txHash: tx.transactionHash,
+        message: '',
+      }
+    }
+    return {
+      success: false,
+      txHash: tx.transactionHash,
+      message: '', // TODO: provide more details
+    }
+  }
+
+  async updateLeverage(market: string, leverage: number): Promise<Txn> {
+    const tx = (await this.sdk.wallet.sendTx({
+      typeUrl: CarbonTx.Types.MsgSetLeverage,
+      value: {
+        creator: this.sdk.wallet.bech32Address,
+        market: this.perpMarkets[market].name,
+        leverage: new BigNumber(leverage).shiftedBy(18).toString(),
+      },
+    })) as any
+
+    if (tx.code === 0) {
+      // tx succeeded
+      return {
+        success: true,
+        txHash: tx.transactionHash,
+        message: '',
+      }
+    }
+    return {
+      success: false,
+      txHash: tx.transactionHash,
+      message: '', // TODO: provide more details
+    }
   }
 }

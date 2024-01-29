@@ -2,7 +2,8 @@
   "compilerOptions": {
     "noImplicitAny": false,
     "esModuleInterop": true,
-    "outDir": "dist",
+    "outDir": "./lib",
+    "rootDir": "./src",
     "skipLibCheck": true
   },
   "exclude": ["./node_modules", "**/*.spec.ts"]

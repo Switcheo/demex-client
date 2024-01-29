@@ -2,3 +2,4 @@
 .env
 /dist
 /logs
+/lib

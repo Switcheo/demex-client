@@ -117,7 +117,7 @@ export interface Position {
   update_count?: number
   exit_count?: number
   symbol?: string
-  index_price?: number
+  mark_price?: number
   unrealized_pnl?: number
 }
 
@@ -175,6 +175,63 @@ export enum MAINNET_TOKENS {
   USD = 'cgt/1',
   SWTH = 'swth/1',
 }
+
+export interface UsageMultiplier {
+  [market: string]: BigNumber
+}
+
+export interface MarketStats {
+  fundingRate: number
+  id: string
+  indexPrice: number
+  lastPrice: number
+  markPrice: number
+  symbol: string
+  volume: number
+}
+
+export interface OrderParams {
+  market: string
+  side: OrderSide
+  price?: number
+  quantity: number
+  type?: OrderType
+  tif?: OrderTIF
+  stopPrice?: string
+  postOnly?: boolean
+  referrer_address?: string
+  isPostOnly?: boolean
+}
+
+export enum OrderType {
+  Limit = 'limit',
+  Market = 'market',
+  StopLimit = 'stop-limit',
+  StopMarket = 'stop-market',
+}
+
+export enum OrderTIF {
+  GTC = 'gtc',
+  FOK = 'fok',
+  IOC = 'ioc',
+}
+
+export enum OrderSide {
+  Buy = 'buy',
+  Sell = 'sell',
+}
+
+export interface Txn {
+  success: boolean
+  txHash: string
+  message: string
+}
+
+export interface UserLeverage {
+  market: string
+  leverage: number
+}
+
 // export interface ClientOptions {
 //   network?: Carbon.Network
 //   config?: Partial<NetworkConfig>

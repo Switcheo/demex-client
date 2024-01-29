@@ -1,5 +1,5 @@
 import BigNumber from 'bignumber.js'
-import { Fill, MarketParams, Order, Position, UserFill } from '../types'
+import { Fill, MarketParams, Order, Position, UserFill } from './types'
 
 export function sleep(interval: number = 1000) {
   return new Promise(resolve => {

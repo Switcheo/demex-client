@@ -1,8 +1,9 @@
 {
   "name": "demex-client",
-  "version": "1.0.0",
-  "main": "dist/index.js",
-  "author": "junw3i <chanjunwei@gmail.com>",
+  "version": "0.1.0",
+  "description": "A perp trading client built on top of carbon-js-sdk",
+  "main": "lib/index.js",
+  "author": "Switcheo <engineering@switcheo.network>",
   "license": "Apache-2.0",
   "dependencies": {
     "axios": "^1.6.2",
@@ -10,11 +11,11 @@
     "carbon-js-sdk": "^0.8.0",
     "dayjs": "^1.11.10",
     "lodash.camelcase": "^4.3.0",
-    "lodash.mapkeys": "^4.6.0"
+    "lodash.mapkeys": "^4.6.0",
+    "typescript": "^5.3.2"
   },
   "devDependencies": {
     "dotenv": "^16.3.1",
-    "ts-node": "^10.9.1",
-    "typescript": "^5.3.2"
+    "ts-node": "^10.9.1"
   }
 }
