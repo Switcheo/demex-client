@@ -46,7 +46,7 @@ This client is considered Alpha software and is under develpoment at the moment.
 
 ## WIP
 
-- [ ] Wrapped Deposits and withdrawls transfer functions
+- [ ] Wrapped deposit and withdrawal transfer functions
 - [ ] Devnet & Testnet support
 
 ## Quickstart
