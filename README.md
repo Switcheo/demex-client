@@ -26,7 +26,7 @@ Some data are steamed over websockets and cached in memory while the remaining a
 # For NPM
 npm install demex-client --legacy-peer-deps
 
-#For Yarn
+# For Yarn
 yarn add demex-client --legacy-peer-deps
 ```
 
