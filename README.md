@@ -11,11 +11,9 @@
 
 # Demex Client
 
-This is an opinionated typescript client that wraps around carbon-js-sdk that aims to proivde a simple way to programmatically trade on Carbon's Perpetuals markets.
+This is an opinionated typescript client that wraps around carbon-js-sdk to proivde a simple way to programmatically trade on Carbon's Perpetuals markets.
 
-The client attempts to fetch data over websockets and caches it in memory whenever possible with the exception for trades and funding rates data.
-
-As a result, data fetching functions that are made via GRPC or API have to be made asynchronously while data fetching from the local cache can be made synchronously.
+Some data are steamed over websockets and caches it in memory while the remaining will be fetched asynchronously over gRPC or API methods.
 
 ## Constraints
 
@@ -39,13 +37,12 @@ This client is considered Alpha software and is under develpoment at the moment.
 ## Features
 
 - [ ] Uses human friendly symbols instead of market ids (e.g. "ETH" -> "cmkt/117")
-- [ ] Order submission with human readable inputs with tick and lot sizes rounding
-- [ ] Transform outputs to human readable values
+- [ ] Astracts all sats values & requirements to human readable values
+- [ ] Dead man's switch for chain and indexer liveliness to prevent stale data
 - [ ] Virtualization of user account state via websockets
 - [ ] Virtualization of market data state via websockets
-- [ ] Dead man's switch for chain and indexer liveliness
-- [ ] Wrap position response with mark price and unrealized profit & loss
-- [ ] Warp market stats with funding rates
+- [ ] Wraps position data with mark price and unrealized profit & loss
+- [ ] Warps market stats with funding rates
 
 ## WIP
 
