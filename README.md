@@ -44,8 +44,9 @@ This client is considered Alpha software and is under develpoment at the moment.
 - [ ] Wraps position data with mark price and unrealized profit & loss
 - [ ] Warps market stats with funding rates
 
-## WIP
+## Roadmap
 
+- [ ] Expose websocket messages
 - [ ] Wrapped deposit and withdrawal transfer functions
 - [ ] Devnet & Testnet support
 
