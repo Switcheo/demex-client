@@ -17,8 +17,20 @@ The client attempts to fetch data over websockets and caches it in memory whenev
 
 As a result, data fetching functions that are made via GRPC or API have to be made asynchronously while data fetching from the local cache can be made synchronously.
 
-Spot market trading is not supported on this client at the moment.
-Only Mainnet is supported on this client at the moment.
+## Constraints
+
+- MAINNET support only
+- Perpetuals trading only
+
+## Installation
+
+```
+# For NPM
+npm install demex-client --legacy-peer-deps
+
+#For Yarn
+yarn add demex-client --legacy-peer-deps
+```
 
 ## Warning
 
@@ -26,27 +38,30 @@ This client is considered Alpha software and is under develpoment at the moment.
 
 ## Features
 
+- [ ] Uses human friendly symbols instead of market ids (e.g. "ETH" -> "cmkt/117")
 - [ ] Order submission with human readable inputs with tick and lot sizes rounding
 - [ ] Transform outputs to human readable values
-- [ ] Uses human friendly tickers instead of market ids (e.g. "ETH" -> "cmkt/117")
-- [ ] Wrap position response with index price and unrealized profit & loss
-- [ ] Dead man's switch for chain and indexer liveliness
 - [ ] Virtualization of user account state via websockets
 - [ ] Virtualization of market data state via websockets
-- [ ] Funding rate caculations
+- [ ] Dead man's switch for chain and indexer liveliness
+- [ ] Wrap position response with mark price and unrealized profit & loss
+- [ ] Warp market stats with funding rates
+
+## WIP
+
 - [ ] Wrapped Deposits and withdrawls transfer functions
 
-### Data Fetching Example
+### Quickstart
 
 ```
-import { Client } from './client'
-import 'dotenv/config'
+
+import { Client, OrderSide, OrderType } from './client'
 import { MAINNET_TOKENS } from '../types'
 
-
 async function run() {
+
   const bot = new Client()
-  await bot.init({ mnemonic: process.env.MNEMONIC })
+  await bot.init({ mnemonic: "YOUR MNEMONIC"})
   bot.subscribeOrderBooks(['BTC', 'ETH'])
   bot.subscribeAccountData()
 
@@ -54,33 +69,33 @@ async function run() {
 
   // MARKET DATA
 
-  // order book
   const orderBook = bot.getOrderBook('ETH')
-
-  // recent trades
-    const recentTrades = await bot.getTrades('BTC')
+  const recentTrades = await bot.getTrades('BTC')
+  const stats = await bot.getMarketStats()
 
   // ACCOUNT DATA
 
-  // user balance
   const usdBalance = bot.getBalance(MAINNET_TOKENS.USD)
-
-  // positions
   const positions = bot.getPositions()
-
-  // position
   const position = bot.getPosition('BTC')
-
-  // open orders
   const orders = bot.getOpenOrders('BTC')
 
-  // account trades
   const userTrades = await bot.getUserTrades('BTC')
-}
+  const leverages = await bot.getMarketsLeverage()
 
-// start anonymous function
-;(async () => {
-  await run()
-})()
+  // TRANSACTIONS
+
+  const order = await bot.submitOrder({
+    market: 'BTC',
+    side: OrderSide.Buy,
+    price: 40000.001,
+    quantity: 0.0011111,
+    type: OrderType.Limit,
+  })
+  const cancels = await bot.cancelAll('BTC')
+  cosnt cancel = await.bot.cancelOrder("ORDERID")
+  const leverage = await bot.updateLeverage('ETH', 1.3)
+
+}
 
 ```
