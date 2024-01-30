@@ -54,8 +54,7 @@ This client is considered Alpha software and is under develpoment at the moment.
 
 ```
 
-import { Client, OrderSide, OrderType } from './client'
-import { MAINNET_TOKENS } from '../types'
+import { Client, OrderSide, OrderType, MAINNET_TOKENS } from 'demex-client'
 
 async function run() {
 
