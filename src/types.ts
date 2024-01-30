@@ -77,8 +77,8 @@ export interface Balance {
 
 export interface Order {
   id: string
-  block_height: number
-  block_created_at: string
+  blockHeight: number
+  blockCreatedAt: string
   address: string
   side: string
   price: number
@@ -86,16 +86,16 @@ export interface Order {
   available: number
   filled: number
   status: string
-  order_type: string
+  orderType: string
   initiator: string
-  time_in_force: string
-  stop_price: number
-  avg_filled_price: number
-  referral_address: string
-  referral_commission: number
-  allocated_margin_denom: string
-  allocated_margin_amount: number
-  last_updated_block_height: number
+  timeInForce: string
+  stopPrice: number
+  avgFilledPrice: number
+  referralAddress: string
+  referralCommission: number
+  allocatedMarginDenom: string
+  allocatedMarginAmount: number
+  lastUpdatedBlockHeight: number
   symbol?: string
 }
 
@@ -103,22 +103,20 @@ export interface Position {
   market?: string
   address?: string
   side?: string
-  opened_block_height?: number
-  updated_block_height?: number
-  realized_pnl?: number
-  max_lots?: number
-  total_fee_amount?: number
-  avg_allocated_margin?: number
-  avg_entry_price: number
-  avg_exit_price?: number
-  allocated_margin: number
+  openedBlockHeight?: number
+  updatedBlockHeight?: number
+  realizedPnl?: number
+  totalFeeAmount?: number
+  avgEntryPrice: number
+  avgExitPrice?: number
+  allocatedMargin: number
   lots: number
-  opened_at?: string
-  update_count?: number
-  exit_count?: number
+  openedAt?: string
+  updateCount?: number
+  exitCount?: number
   symbol?: string
-  mark_price?: number
-  unrealized_pnl?: number
+  markPrice?: number
+  unrealizedPnl?: number
 }
 
 export interface UserFill {
@@ -136,28 +134,28 @@ export interface UserFill {
 
 export interface Fill {
   id: string
-  block_height: string
-  block_created_at: string
+  blockHeight: string
+  blockCreatedAt: string
   market: string
   price: number
   quantity: number
   liquidity: string
-  taker_id: string
-  taker_side: string
-  taker_address: string
-  taker_fee_amount: number
-  taker_fee_denom: string
-  taker_fee_kickback: number
-  taker_fee_commission: number
-  taker_fee_commission_address: string
-  maker_id: string
-  maker_side: string
-  maker_address: string
-  maker_fee_amount: number
-  maker_fee_denom: string
-  maker_fee_kickback: number
-  maker_fee_commission: number
-  maker_fee_commission_address: string
+  takerId: string
+  takerSide: string
+  takerAddress: string
+  takerFeeAmount: number
+  takerFeeDenom: string
+  takerFeeKickback: number
+  takerFeeCommission: number
+  takerFeeCommissionAddress: string
+  makerId: string
+  makerSide: string
+  makerAddress: string
+  makerFeeAmount: number
+  makerFeeDenom: string
+  makerFeeKickback: number
+  makerFeeCommission: number
+  makerFeeCommissionAddress: string
   symbol?: string
 }
 
@@ -191,7 +189,7 @@ export interface MarketStats {
 }
 
 export interface OrderParams {
-  market: string
+  symbol: string
   side: OrderSide
   price?: number
   quantity: number
@@ -231,56 +229,3 @@ export interface UserLeverage {
   market: string
   leverage: number
 }
-
-// export interface ClientOptions {
-//   network?: Carbon.Network
-//   config?: Partial<NetworkConfig>
-// }
-
-// export interface EthNetworkConfig {
-//   rpcURL: string
-//   wsURL: string
-//   payerURL: string
-//   lockProxyAddr: string
-//   bridgeEntranceAddr: string
-//   balanceReader: string
-//   byteCodeHash: string
-// }
-// export interface NeoNetworkConfig {
-//   rpcURL: string
-//   wrapperScriptHash: string
-// }
-// export interface N3NetworkConfig {
-//   rpcURL: string
-//   networkMagic: number
-// }
-// export interface ZilNetworkConfig {
-//   rpcURL: string
-//   chainId: number
-//   lockProxyAddr: string
-//   bridgeEntranceAddr: string
-// }
-// export interface NetworkConfig {
-//   tmRpcUrl: string
-//   tmWsUrl: string
-//   restUrl: string
-//   grpcUrl: string
-//   grpcWebUrl: string
-//   evmJsonRpcUrl: string
-//   evmWsUrl: string
-//   insightsUrl: string
-//   hydrogenUrl: string
-//   wsUrl: string
-//   faucetUrl: string
-//   Bech32Prefix: string
-//   network: Network
-//   feeAddress: string
-//   eth: EthNetworkConfig
-//   bsc: EthNetworkConfig
-//   arbitrum: EthNetworkConfig
-//   polygon: EthNetworkConfig
-//   okc: EthNetworkConfig
-//   neo: NeoNetworkConfig
-//   n3: N3NetworkConfig
-//   zil: ZilNetworkConfig
-// }

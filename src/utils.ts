@@ -28,7 +28,7 @@ export function humanizeOrder(o: any, marketParams: MarketParams): Order {
     avg_filled_price: toHumanPrice(o.avg_filled_price, marketParams),
     allocated_margin_amount: toHumanQuantity(o.allocated_margin_amount, 18),
   }
-  return order
+  return snakeToCamel(order)
 }
 export function humanizePosition(p: any, marketParams: MarketParams): Position {
   const position = {
@@ -42,7 +42,7 @@ export function humanizePosition(p: any, marketParams: MarketParams): Position {
     allocated_margin: toHumanQuantity(p.allocated_margin, 18),
     lots: toHumanQuantity(p.lots, marketParams.basePrecision),
   }
-  return position
+  return snakeToCamel(position)
 }
 
 export function humanizeFill(f: any, marketParams: MarketParams): Fill {
@@ -57,7 +57,7 @@ export function humanizeFill(f: any, marketParams: MarketParams): Fill {
     maker_fee_kickback: toHumanQuantity(f.maker_fee_kickback, 18),
     maker_fee_commission: toHumanQuantity(f.maker_fee_commission, 18),
   }
-  return fill
+  return snakeToCamel(fill)
 }
 export function humanizeUserFill(
   f: any,
@@ -84,7 +84,7 @@ export function humanizeUserFill(
     block_height: parseInt(block_height),
     block_created_at,
   }
-  return fill
+  return snakeToCamel(fill)
 }
 
 export function sortDesc(lhs: any, rhs: any) {
@@ -96,4 +96,20 @@ export function sortAsc(lhs: any, rhs: any) {
   if (lhs > rhs) return 1
   if (rhs > rhs) return -1
   return 0
+}
+
+export function snakeToCamel(obj: any): any {
+  if (obj === null || typeof obj !== 'object') {
+    return obj
+  }
+
+  if (Array.isArray(obj)) {
+    return obj.map(snakeToCamel)
+  }
+
+  return Object.keys(obj).reduce((acc, key) => {
+    const camelKey = key.replace(/_(\w)/g, (_, letter) => letter.toUpperCase())
+    acc[camelKey] = snakeToCamel(obj[key])
+    return acc
+  }, {})
 }

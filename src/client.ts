@@ -564,22 +564,6 @@ export class Client {
     }
   }
 
-  // async fetchOraclePrices(): Promise<void> {
-  //   while (true) {
-  //     try {
-  //       const { results } = await this.sdk!.query.oracle.ResultsLatest({
-  //         oracleId: '',
-  //       })
-  //       for (const i of results) {
-  //         const symbol = this.oraclesIdtoSymbol[i.oracleId]
-  //         this.prices[symbol] = parseFloat(i.data)
-  //       }
-  //     } catch (e) {
-  //     } finally {
-  //       await sleep(5555)
-  //     }
-  //   }
-  // }
   async fetchMarketStats(): Promise<void> {
     while (true) {
       try {
@@ -649,135 +633,15 @@ export class Client {
    * Gets the market info for a given ticker
    * @param symbol ticker
    */
-  getPerpMarketInfo(ticker: string) {
-    if (this.perpMarkets[ticker]) {
-      return this.perpMarkets[ticker.toUpperCase()]
+  getPerpMarketInfo(symbol: string) {
+    if (this.perpMarkets[symbol]) {
+      return this.perpMarkets[symbol.toUpperCase()]
     }
     throw new Error('market not found')
   }
 
-  //
-  // GETTERS
-  //
+  /* HELPER FUNCTIONS TO DERIVE FUNDING RATE */
 
-  getOrderBook(market: string): Book {
-    const id = this.getPerpMarketInfo(market).name
-    if (!this.books[id]) {
-      throw new Error(`${market} not found in order books. Did you subscribe?`)
-    }
-    return this.books[id]
-  }
-
-  getBalance(denom: MAINNET_TOKENS): Balance {
-    if (this.balances[denom]) {
-      return this.balances[denom]
-    }
-    return {
-      available: new BigNumber(0),
-      order: new BigNumber(0),
-      position: new BigNumber(0),
-      total: new BigNumber(0),
-    }
-  }
-
-  // @note: uses index price to estimate the uPnL instead of mark price
-  getPositions(): Position[] {
-    const positions = []
-    for (const market of Object.keys(this.openPositions)) {
-      const position = this.openPositions[market]
-      position.symbol = this.marketIdtoSymbol[market]
-      position.mark_price = this.stats[market].markPrice
-
-      position.unrealized_pnl =
-        position.lots > 0
-          ? (position.mark_price - position.avg_entry_price) * position.lots
-          : (position.avg_entry_price - position.mark_price) * position.lots
-      this.marketsInfo[market]
-      positions.push(position)
-    }
-    return positions
-  }
-
-  getPosition(market: string): Position {
-    const empty = {
-      symbol: market,
-      allocated_margin: 0,
-      avg_entry_price: 0,
-      lots: 0,
-      side: '',
-    }
-
-    if (!this.perpMarkets[market]) return empty
-
-    const id = this.perpMarkets[market].name
-
-    if (this.openPositions[id]) {
-      const position = this.openPositions[id]
-      position.symbol = market
-      position.mark_price = this.stats[id].markPrice
-
-      position.unrealized_pnl =
-        position.lots > 0
-          ? (position.mark_price - position.avg_entry_price) * position.lots
-          : (position.avg_entry_price - position.mark_price) * position.lots
-      return position
-    }
-
-    return empty
-  }
-
-  getOpenOrders(market?: string): Order[] {
-    const orders = []
-    const markets = Object.keys(this.openOrders)
-    for (const m of markets) {
-      this.openOrders[m].forEach(order => {
-        orders.push({ ...order, symbol: this.marketIdtoSymbol[m] })
-      })
-    }
-
-    if (market) {
-      return orders.filter(order => order.symbol === market)
-    }
-    return orders
-  }
-
-  async getUserTrades(market?: string): Promise<UserFill[]> {
-    // uses the API endpoint instead of GRPC as the API endpoint is more flexible
-    let url = `https://api.carbon.network/carbon/broker/v1/trades?pagination.limit=200&pagination.count_total=false&address=${this.address}`
-    if (market) {
-      const marketId = this.getPerpMarketInfo(market).name
-      url = `${url}&market=${marketId}`
-    }
-
-    const { trades } = (await axios.get(url)).data
-    const fills = trades.map(fill => {
-      const symbol = this.marketIdtoSymbol[fill.market]
-      const hFill = humanizeUserFill(fill, this.marketsInfo[fill.market], this.address)
-      return { ...hFill, symbol }
-    })
-    return fills
-  }
-
-  async getTrades(market?: string): Promise<Fill[]> {
-    // uses the API endpoint instead of GRPC as the API endpoint is more flexible
-    let url = `https://api.carbon.network/carbon/broker/v1/trades?pagination.limit=200&pagination.count_total=false`
-    if (market) {
-      const marketId = this.getPerpMarketInfo(market).name
-      url = `${url}&market=${marketId}`
-    }
-
-    const { trades } = (await axios.get(url)).data
-    const fills = trades.map(fill => {
-      const symbol = this.marketIdtoSymbol[fill.market]
-      const hFill = humanizeFill(fill, this.marketsInfo[fill.market])
-      return { ...hFill, symbol }
-    })
-    return fills
-  }
-
-  /**
-   * Helpers
-   */
   async getUsageMultiplier(): Promise<UsageMultiplier> {
     const usageMultiplierData = {}
     const usageMultiplier = await axios.get(
@@ -802,6 +666,123 @@ export class Client {
         return new BigNumber(p.total_nav_amount).shiftedBy(-18)
       }
     }
+  }
+
+  /* GETTERS */
+
+  getOrderBook(symbol: string): Book {
+    const id = this.getPerpMarketInfo(symbol).name
+    if (!this.books[id]) {
+      throw new Error(`${symbol} not found in order books. Did you subscribe?`)
+    }
+    return this.books[id]
+  }
+
+  getBalance(denom: MAINNET_TOKENS): Balance {
+    if (this.balances[denom]) {
+      return this.balances[denom]
+    }
+    return {
+      available: new BigNumber(0),
+      order: new BigNumber(0),
+      position: new BigNumber(0),
+      total: new BigNumber(0),
+    }
+  }
+
+  // @note: uses index price to estimate the uPnL instead of mark price
+  getPositions(): Position[] {
+    const positions = []
+    for (const market of Object.keys(this.openPositions)) {
+      const position = this.openPositions[market]
+      position.symbol = this.marketIdtoSymbol[market]
+      position.markPrice = this.stats[market].markPrice
+
+      position.unrealizedPnl =
+        position.lots > 0
+          ? (position.markPrice - position.avgEntryPrice) * position.lots
+          : (position.avgEntryPrice - position.markPrice) * position.lots
+
+      positions.push(position)
+    }
+    return positions
+  }
+
+  getPosition(symbol: string): Position {
+    const empty = {
+      symbol,
+      allocatedMargin: 0,
+      avgEntryPrice: 0,
+      lots: 0,
+      side: '',
+    }
+
+    if (!this.perpMarkets[symbol]) return empty
+
+    const id = this.perpMarkets[symbol].name
+
+    if (this.openPositions[id]) {
+      const position = this.openPositions[id]
+      position.symbol = symbol
+      position.markPrice = this.stats[id].markPrice
+
+      position.unrealizedPnl =
+        position.lots > 0
+          ? (position.markPrice - position.avgEntryPrice) * position.lots
+          : (position.avgEntryPrice - position.markPrice) * position.lots
+      return position
+    }
+
+    return empty
+  }
+
+  getOpenOrders(symbol?: string): Order[] {
+    const orders = []
+    const markets = Object.keys(this.openOrders)
+    for (const m of markets) {
+      this.openOrders[m].forEach(order => {
+        orders.push({ ...order, symbol: this.marketIdtoSymbol[m] })
+      })
+    }
+
+    if (symbol) {
+      return orders.filter(order => order.symbol === symbol)
+    }
+    return orders
+  }
+
+  async getUserTrades(symbol?: string): Promise<UserFill[]> {
+    // uses the API endpoint instead of GRPC as the API endpoint is more flexible
+    let url = `https://api.carbon.network/carbon/broker/v1/trades?pagination.limit=200&pagination.count_total=false&address=${this.address}`
+    if (symbol) {
+      const marketId = this.getPerpMarketInfo(symbol).name
+      url = `${url}&market=${marketId}`
+    }
+
+    const { trades } = (await axios.get(url)).data
+    const fills = trades.map(fill => {
+      const symbol = this.marketIdtoSymbol[fill.market]
+      const hFill = humanizeUserFill(fill, this.marketsInfo[fill.market], this.address)
+      return { ...hFill, symbol }
+    })
+    return fills
+  }
+
+  async getTrades(symbol?: string): Promise<Fill[]> {
+    // uses the API endpoint instead of GRPC as the API endpoint is more flexible
+    let url = `https://api.carbon.network/carbon/broker/v1/trades?pagination.limit=200&pagination.count_total=false`
+    if (symbol) {
+      const marketId = this.getPerpMarketInfo(symbol).name
+      url = `${url}&market=${marketId}`
+    }
+
+    const { trades } = (await axios.get(url)).data
+    const fills = trades.map(fill => {
+      const symbol = this.marketIdtoSymbol[fill.market]
+      const hFill = humanizeFill(fill, this.marketsInfo[fill.market])
+      return { ...hFill, symbol }
+    })
+    return fills
   }
 
   async getMarketStats(): Promise<MarketStats[]> {
@@ -849,10 +830,10 @@ export class Client {
         const marketInfo = this.marketsInfo[market_id]
         const positionHuman = humanizePosition(position, marketInfo)
         const positionMargin = position
-          ? new BigNumber(positionHuman.allocated_margin)
+          ? new BigNumber(positionHuman.allocatedMargin)
           : new BigNumber(0)
         const avgEntryPrice = position
-          ? new BigNumber(positionHuman.avg_entry_price)
+          ? new BigNumber(positionHuman.avgEntryPrice)
           : new BigNumber(0)
         const lots = position ? new BigNumber(positionHuman.lots) : new BigNumber(0)
         // // get mark price to calculate uPnL
@@ -941,7 +922,7 @@ export class Client {
 
       if (symbol) {
         leverages.push({
-          market: symbol,
+          symbol,
           leverage: new BigNumber(leverage).shiftedBy(-18).dp(2).toNumber(),
         })
       }
@@ -949,6 +930,8 @@ export class Client {
 
     return leverages
   }
+
+  /* HELPER FUNCTIONS FOR ORDER SUBMISSION */
 
   roundPrice(price, side, market) {
     const { tickSize } = this.marketsInfo[market]
@@ -967,8 +950,8 @@ export class Client {
   // @note: order id is not returned in the transaction response.
   // Use getOpenOrders to get the order id
   async submitOrder(params: OrderParams): Promise<Txn> {
-    const market = this.perpMarkets[params.market].name
-    const { basePrecision, quotePrecision } = this.perpMarkets[params.market]
+    const market = this.perpMarkets[params.symbol].name
+    const { basePrecision, quotePrecision } = this.perpMarkets[params.symbol]
 
     const quantityBN = new BigNumber(params.quantity).shiftedBy(basePrecision)
     const quantity = this.roundQuantity(quantityBN, market).toString(10)
@@ -1062,12 +1045,12 @@ export class Client {
     }
   }
 
-  async updateLeverage(market: string, leverage: number): Promise<Txn> {
+  async updateLeverage(symbol: string, leverage: number): Promise<Txn> {
     const tx = (await this.sdk.wallet.sendTx({
       typeUrl: CarbonTx.Types.MsgSetLeverage,
       value: {
         creator: this.sdk.wallet.bech32Address,
-        market: this.perpMarkets[market].name,
+        market: this.perpMarkets[symbol].name,
         leverage: new BigNumber(leverage).shiftedBy(18).toString(),
       },
     })) as any

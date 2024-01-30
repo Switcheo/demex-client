@@ -11,9 +11,9 @@
 
 # Demex Client
 
-This is an opinionated typescript client that wraps around carbon-js-sdk to proivde a simple way to programmatically trade on Carbon's Perpetuals markets.
+This is an opinionated typescript client that wraps around [carbon-js-sdk](https://github.com/Switcheo/carbon-js-sdk) to proivde a simple way to programmatically trade on Carbon's Perpetuals markets.
 
-Some data are steamed over websockets and caches it in memory while the remaining will be fetched asynchronously over gRPC or API methods.
+Some data are steamed over websockets and cached in memory while the remaining are fetched asynchronously over gRPC or API methods.
 
 ## Constraints
 
@@ -47,8 +47,9 @@ This client is considered Alpha software and is under develpoment at the moment.
 ## WIP
 
 - [ ] Wrapped Deposits and withdrawls transfer functions
+- [ ] Devnet & Testnet support
 
-### Quickstart
+## Quickstart
 
 ```
 
@@ -83,7 +84,7 @@ async function run() {
   // TRANSACTIONS
 
   const order = await bot.submitOrder({
-    market: 'BTC',
+    symbol: 'BTC',
     side: OrderSide.Buy,
     price: 40000.001,
     quantity: 0.0011111,
@@ -96,3 +97,7 @@ async function run() {
 }
 
 ```
+
+## Bugs / Requests
+
+Submit an issue [here](https://github.com/Switcheo/demex-client/issues).
