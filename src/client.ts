@@ -155,7 +155,7 @@ export class Client {
     const marketsToSubscribe = []
     for (const book of markets) {
       if (this.perpMarkets[book]) {
-        marketsToSubscribe.push(`books:${this.perpMarkets[book].name}`)
+        marketsToSubscribe.push(`books:${this.perpMarkets[book].id}`)
       }
     }
     this.orderbookChannels = marketsToSubscribe
@@ -397,8 +397,8 @@ export class Client {
             if (update_type === 'full_state') {
               const openOrders = {}
               for (const o of result.open_orders) {
-                const { market } = o
-                const info = this.marketsInfo[market]
+                const { market_id } = o
+                const info = this.marketsInfo[market_id]
                 const order = humanizeOrder(o, info)
 
                 if (!openOrders[market]) {
@@ -410,26 +410,26 @@ export class Client {
               this.updateWsState(m.channel)
             } else {
               for (const o of result) {
-                const { market } = o
+                const { market_id } = o
                 if (o.type === 'update') {
                   const { status } = o
-                  const index = this.openOrders[market].findIndex(
+                  const index = this.openOrders[market_id].findIndex(
                     order => order.id === o.id
                   )
                   if (status === 'cancelled') {
-                    this.openOrders[market].splice(index, 1)
+                    this.openOrders[market_id].splice(index, 1)
                   } else {
-                    const info = this.marketsInfo[market]
+                    const info = this.marketsInfo[market_id]
                     const order = humanizeOrder(o, info)
-                    this.openOrders[market][index] = order
+                    this.openOrders[market_id][index] = order
                   }
                 } else if (o.type === 'new') {
-                  const info = this.marketsInfo[market]
+                  const info = this.marketsInfo[market_id]
                   const order = humanizeOrder(o, info)
-                  if (!this.openOrders[market]) {
-                    this.openOrders[market] = []
+                  if (!this.openOrders[market_id]) {
+                    this.openOrders[market_id] = []
                   }
-                  this.openOrders[market].push(order)
+                  this.openOrders[market_id].push(order)
                 } else {
                   console.log('this should not happen', o.type)
                 }
@@ -439,13 +439,13 @@ export class Client {
           case 'positions':
             if (update_type === 'full_state') {
               for (const p of result.open_positions) {
-                const position = humanizePosition(p, this.marketsInfo[p.market])
+                const position = humanizePosition(p, this.marketsInfo[p.market_id])
                 this.openPositions[p.market] = position
               }
               this.updateWsState(m.channel)
             } else {
               for (const p of result) {
-                const position = humanizePosition(p, this.marketsInfo[p.market])
+                const position = humanizePosition(p, this.marketsInfo[p.market_id])
                 this.openPositions[p.market] = position
               }
             }
@@ -454,7 +454,7 @@ export class Client {
             if (update_type === 'full_state') {
               const fills = []
               for (const f of result) {
-                const fill = humanizeFill(f, this.marketsInfo[f.market])
+                const fill = humanizeFill(f, this.marketsInfo[f.market_id])
                 fills.push(fill)
               }
               this.last200Fills = fills
@@ -462,7 +462,7 @@ export class Client {
             } else {
               const fills = this.last200Fills
               for (const f of result) {
-                const fill = humanizeFill(f, this.marketsInfo[f.market])
+                const fill = humanizeFill(f, this.marketsInfo[f.market_id])
                 fills.unshift(fill)
               }
               if (fills.length > 200) {
@@ -535,7 +535,7 @@ export class Client {
         quotePrecision: market.quotePrecision.toNumber(),
         tickSize: new BigNumber(market.tickSize).shiftedBy(-18).toNumber(),
       }
-      this.marketsInfo[market.name] = marketInfo
+      this.marketsInfo[market.id] = marketInfo
     }
   }
   /* Gets all tokens parameters */
@@ -571,7 +571,7 @@ export class Client {
         const { marketstats } = (await axios.get(url)).data
         for (const m of marketstats) {
           if (m.market_type === 'futures') {
-            const info = this.marketsInfo[m.market]
+            const info = this.marketsInfo[m.market_id]
             if (info.isActive) {
               const { basePrecision, quotePrecision } = info
               const markPrice = new BigNumber(m.mark_price).shiftedBy(
@@ -585,7 +585,7 @@ export class Client {
               )
               const day_quote_volume = new BigNumber(m.day_quote_volume).shiftedBy(-18)
 
-              this.stats[m.market] = {
+              this.stats[m.market_id] = {
                 markPrice: markPrice.dp(indexPrice.dp()).toNumber(),
                 indexPrice: indexPrice.toNumber(),
                 premiumRate: parseFloat(m.premium_rate),
@@ -671,7 +671,7 @@ export class Client {
   /* GETTERS */
 
   getOrderBook(symbol: string): Book {
-    const id = this.getPerpMarketInfo(symbol).name
+    const { id } = this.getPerpMarketInfo(symbol)
     if (!this.books[id]) {
       throw new Error(`${symbol} not found in order books. Did you subscribe?`)
     }
@@ -719,7 +719,7 @@ export class Client {
 
     if (!this.perpMarkets[symbol]) return empty
 
-    const id = this.perpMarkets[symbol].name
+    const { id } = this.perpMarkets[symbol]
 
     if (this.openPositions[id]) {
       const position = this.openPositions[id]
@@ -755,14 +755,14 @@ export class Client {
     // uses the API endpoint instead of GRPC as the API endpoint is more flexible
     let url = `https://api.carbon.network/carbon/broker/v1/trades?pagination.limit=200&pagination.count_total=false&address=${this.address}`
     if (symbol) {
-      const marketId = this.getPerpMarketInfo(symbol).name
+      const marketId = this.getPerpMarketInfo(symbol).id
       url = `${url}&market=${marketId}`
     }
 
     const { trades } = (await axios.get(url)).data
     const fills = trades.map(fill => {
-      const symbol = this.marketIdtoSymbol[fill.market]
-      const hFill = humanizeUserFill(fill, this.marketsInfo[fill.market], this.address)
+      const symbol = this.marketIdtoSymbol[fill.market_id]
+      const hFill = humanizeUserFill(fill, this.marketsInfo[fill.market_id], this.address)
       return { ...hFill, symbol }
     })
     return fills
@@ -772,14 +772,14 @@ export class Client {
     // uses the API endpoint instead of GRPC as the API endpoint is more flexible
     let url = `https://api.carbon.network/carbon/broker/v1/trades?pagination.limit=200&pagination.count_total=false`
     if (symbol) {
-      const marketId = this.getPerpMarketInfo(symbol).name
+      const marketId = this.getPerpMarketInfo(symbol).id
       url = `${url}&market=${marketId}`
     }
 
     const { trades } = (await axios.get(url)).data
     const fills = trades.map(fill => {
-      const symbol = this.marketIdtoSymbol[fill.market]
-      const hFill = humanizeFill(fill, this.marketsInfo[fill.market])
+      const symbol = this.marketIdtoSymbol[fill.market_id]
+      const hFill = humanizeFill(fill, this.marketsInfo[fill.market_id])
       return { ...hFill, symbol }
     })
     return fills
@@ -825,7 +825,8 @@ export class Client {
         const poolNav = this.getPoolNav(poolStats, pool.id)
         const allocatedLiquidity = maxLiquidityRatio.times(totalQuoteRatio).times(poolNav)
 
-        const position = positions.find(pos => pos.market === market_id)
+        const position = positions.find(pos => pos.market_id === market_id)
+        if (!position) continue
 
         const marketInfo = this.marketsInfo[market_id]
         const positionHuman = humanizePosition(position, marketInfo)
@@ -917,8 +918,8 @@ export class Client {
     })
 
     for (const i of marketLeverages) {
-      const { market, leverage } = i
-      const symbol = this.marketIdtoSymbol[market]
+      const { marketId, leverage } = i
+      const symbol = this.marketIdtoSymbol[marketId]
 
       if (symbol) {
         leverages.push({
@@ -950,7 +951,7 @@ export class Client {
   // @note: order id is not returned in the transaction response.
   // Use getOpenOrders to get the order id
   async submitOrder(params: OrderParams): Promise<Txn> {
-    const market = this.perpMarkets[params.symbol].name
+    const market = this.perpMarkets[params.symbol].id
     const { basePrecision, quotePrecision } = this.perpMarkets[params.symbol]
 
     const quantityBN = new BigNumber(params.quantity).shiftedBy(basePrecision)
@@ -964,7 +965,7 @@ export class Client {
       creator: this.sdk.wallet.bech32Address,
       isPostOnly: false,
       isReduceOnly: typeof params.isPostOnly === 'undefined' ? false : params.isPostOnly,
-      market: market,
+      marketId: market,
       orderType: 'limit',
       price,
       quantity,
@@ -997,7 +998,7 @@ export class Client {
   }
 
   async cancelAll(market: string): Promise<Txn> {
-    const id = this.perpMarkets[market].name
+    const id = this.perpMarkets[market].id
     const tx = (await this.sdk.wallet.sendTx({
       typeUrl: CarbonTx.Types.MsgCancelAll,
       value: {
@@ -1050,7 +1051,7 @@ export class Client {
       typeUrl: CarbonTx.Types.MsgSetLeverage,
       value: {
         creator: this.sdk.wallet.bech32Address,
-        market: this.perpMarkets[symbol].name,
+        market: this.perpMarkets[symbol].id,
         leverage: new BigNumber(leverage).shiftedBy(18).toString(),
       },
     })) as any

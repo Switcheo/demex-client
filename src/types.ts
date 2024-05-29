@@ -34,7 +34,7 @@ export interface Token {
 }
 
 export interface MarketParams {
-  name: string
+  id: string
   displayName?: string
   description?: string
   lotSize: string
