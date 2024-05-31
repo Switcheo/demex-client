@@ -1,6 +1,6 @@
 import BigNumber from 'bignumber.js'
 import { EventEmitter } from 'events'
-import { Balance, Book, Order, Position } from './types'
+import { Balance, Book, Order, Position, Trade } from './types'
 
 interface BalancesEvent {
   [denom: string]: Balance
@@ -19,7 +19,7 @@ interface CarbonEvents {
   orderbook: (market: string, orderbook: Book) => void
   openOrders: (orders: OpenOrdersEvent) => void
   positions: (positions: PositionsEvent) => void
-  accountTrades: (trades: any) => void
+  accountTrades: (trades: Trade[]) => void
 }
 
 export class Events extends EventEmitter {

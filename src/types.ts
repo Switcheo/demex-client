@@ -159,6 +159,20 @@ export interface Fill {
   symbol?: string
 }
 
+export interface Trade {
+  orderId: string
+  marketId: string
+  side: string
+  quantity: number
+  price: number
+  feeAmount: number
+  feeDenom: string
+  address: string
+  blockHeight: number
+  blockCreatedAt: string
+  tradeId: number
+}
+
 export interface BookSideMap {
   [price: number]: number
 }
