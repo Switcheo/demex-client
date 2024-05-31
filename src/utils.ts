@@ -46,16 +46,18 @@ export function humanizePosition(p: any, marketParams: MarketParams): Position {
 }
 
 export function humanizeFill(f: any, marketParams: MarketParams): Fill {
+  // console.log(f, marketParams)
   const fill = {
     ...f,
     quantity: toHumanQuantity(f.quantity, marketParams.basePrecision),
     price: toHumanPrice(f.price, marketParams),
-    taker_fee_amount: toHumanQuantity(f.taker_fee_amount, 18),
-    taker_fee_kickback: toHumanQuantity(f.taker_fee_kickback, 18),
-    taker_fee_commission: toHumanQuantity(f.taker_fee_commission, 18),
-    maker_fee_amount: toHumanQuantity(f.maker_fee_amount, 18),
-    maker_fee_kickback: toHumanQuantity(f.maker_fee_kickback, 18),
-    maker_fee_commission: toHumanQuantity(f.maker_fee_commission, 18),
+    fee_amount: toHumanQuantity(f.fee_amount, 18),
+    // taker_fee_amount: toHumanQuantity(f.taker_fee_amount, 18),
+    // taker_fee_kickback: toHumanQuantity(f.taker_fee_kickback, 18),
+    // taker_fee_commission: toHumanQuantity(f.taker_fee_commission, 18),
+    // maker_fee_amount: toHumanQuantity(f.maker_fee_amount, 18),
+    // maker_fee_kickback: toHumanQuantity(f.maker_fee_kickback, 18),
+    // maker_fee_commission: toHumanQuantity(f.maker_fee_commission, 18),
   }
   return snakeToCamel(fill)
 }

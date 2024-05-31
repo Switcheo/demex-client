@@ -7,6 +7,7 @@ import Long from 'long'
 import camelCase from 'lodash.camelcase'
 import mapKeys from 'lodash.mapkeys'
 import WebSocket from 'ws'
+import { Events } from './events'
 
 BigNumber.set({ EXPONENTIAL_AT: 100 })
 
@@ -76,6 +77,7 @@ export class Client {
   balances: { [denom: string]: Balance }
   openOrders: { [market: string]: Order[] }
   openPositions: { [market: string]: Position }
+  events: Events
 
   constructor(options?: CarbonSDKInitOpts) {
     this.tokensInfo = {}
@@ -100,6 +102,9 @@ export class Client {
 
     // market data
     this.stats = {}
+
+    // emitter
+    this.events = new Events()
   }
 
   /**
@@ -356,10 +361,10 @@ export class Client {
                 bids,
                 asks,
               }
-              // TODO: implement ws callbacks
             } else {
               console.log('unknown update_type', update_type)
             }
+            this.events.emit('orderbook', market, this.books[market])
             break
           case 'balances':
             if (update_type === 'full_state') {
@@ -392,6 +397,7 @@ export class Client {
                 }
               }
             }
+            this.events.emit('balances', this.balances)
             break
           case 'orders':
             if (update_type === 'full_state') {
@@ -401,10 +407,10 @@ export class Client {
                 const info = this.marketsInfo[market_id]
                 const order = humanizeOrder(o, info)
 
-                if (!openOrders[market]) {
-                  openOrders[market] = []
+                if (!openOrders[market_id]) {
+                  openOrders[market_id] = []
                 }
-                openOrders[market].push(order)
+                openOrders[market_id].push(order)
               }
               this.openOrders = openOrders
               this.updateWsState(m.channel)
@@ -413,6 +419,8 @@ export class Client {
                 const { market_id } = o
                 if (o.type === 'update') {
                   const { status } = o
+                  console.log(this.openOrders[market_id])
+                  console.log(o)
                   const index = this.openOrders[market_id].findIndex(
                     order => order.id === o.id
                   )
@@ -435,20 +443,22 @@ export class Client {
                 }
               }
             }
+            this.events.emit('openOrders', this.openOrders)
             break
           case 'positions':
             if (update_type === 'full_state') {
               for (const p of result.open_positions) {
                 const position = humanizePosition(p, this.marketsInfo[p.market_id])
-                this.openPositions[p.market] = position
+                this.openPositions[p.market_id] = position
               }
               this.updateWsState(m.channel)
             } else {
               for (const p of result) {
                 const position = humanizePosition(p, this.marketsInfo[p.market_id])
-                this.openPositions[p.market] = position
+                this.openPositions[p.market_id] = position
               }
             }
+            this.events.emit('positions', this.openPositions)
             break
           case 'account_trades':
             if (update_type === 'full_state') {
@@ -472,6 +482,7 @@ export class Client {
                 this.last200Fills = fills
               }
             }
+            this.events.emit('accountTrades', this.last200Fills)
             break
         }
       }
