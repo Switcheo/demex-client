@@ -30,6 +30,7 @@ import {
   OrderSide,
   Txn,
   UserLeverage,
+  Trade,
 } from './types'
 import {
   sleep,
@@ -73,7 +74,7 @@ export class Client {
     }
   }
   // account data
-  last200Fills: Fill[] // sorted by descending block height
+  last200Fills: Trade[] // sorted by descending block height
   balances: { [denom: string]: Balance }
   openOrders: { [market: string]: Order[] }
   openPositions: { [market: string]: Position }

@@ -1,5 +1,5 @@
 import BigNumber from 'bignumber.js'
-import { Fill, MarketParams, Order, Position, UserFill } from './types'
+import { Fill, MarketParams, Order, Position, Trade, UserFill } from './types'
 
 export function sleep(interval: number = 1000) {
   return new Promise(resolve => {
@@ -45,7 +45,7 @@ export function humanizePosition(p: any, marketParams: MarketParams): Position {
   return snakeToCamel(position)
 }
 
-export function humanizeFill(f: any, marketParams: MarketParams): Fill {
+export function humanizeFill(f: any, marketParams: MarketParams): Trade {
   // console.log(f, marketParams)
   const fill = {
     ...f,
