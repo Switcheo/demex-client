@@ -31,6 +31,7 @@ import {
   Txn,
   UserLeverage,
   Trade,
+  DepositSupportedNetworks,
 } from './types'
 import {
   sleep,
@@ -43,6 +44,8 @@ import {
   humanizeFill,
   humanizeUserFill,
 } from './utils'
+import { ethers } from 'ethers'
+import { SWTHAddress } from 'carbon-js-sdk/lib/util/address'
 
 export class Client {
   public sdk: CarbonSDK | null
@@ -79,6 +82,10 @@ export class Client {
   openOrders: { [market: string]: Order[] }
   openPositions: { [market: string]: Position }
   events: Events
+  evmSigners: {
+    eth: ethers.Signer | null
+    arb: ethers.Signer | null
+  }
 
   constructor(options?: CarbonSDKInitOpts) {
     this.tokensInfo = {}
@@ -106,6 +113,12 @@ export class Client {
 
     // emitter
     this.events = new Events()
+
+    // signers
+    this.evmSigners = {
+      eth: null,
+      arb: null,
+    }
   }
 
   /**
@@ -139,6 +152,14 @@ export class Client {
     }
     if (opts.address) {
       this.address = opts.address
+    }
+
+    if (opts.ethSigner) {
+      this.evmSigners.eth = opts.ethSigner
+    }
+
+    if (opts.arbSigner) {
+      this.evmSigners.arb = opts.arbSigner
     }
 
     console.log(`wallet address: ${this.address}`)
@@ -1080,6 +1101,62 @@ export class Client {
       success: false,
       txHash: tx.transactionHash,
       message: '', // TODO: provide more details
+    }
+  }
+
+  // async depositUSDC(amount: number, network: DepositSupportedNetworks): Promise<Txn> {
+  async depositUSDC(amount: number, network: DepositSupportedNetworks) {
+    const addressBytes = SWTHAddress.getAddressBytes(
+      this.sdk?.wallet?.bech32Address!,
+      this.sdk?.network!
+    )
+
+    let token = null
+
+    try {
+      if (network === 'arb') {
+        token = this.tokensInfo['usdc.1.19.f9afe3']
+        const ethAddress = await this.evmSigners.arb.getAddress()
+        const { decimals } = token
+        const tx = await this.sdk?.arbitrum.lockDeposit({
+          ethAddress,
+          signer: this.evmSigners.arb,
+          address: addressBytes,
+          amount: new BigNumber(amount).shiftedBy(decimals),
+          token,
+        })
+
+        return {
+          success: true,
+          txHash: tx.hash,
+          message: '', // TODO: provide more details
+        }
+      } else if (network === 'eth') {
+        token = this.tokensInfo['usdc.1.2.343151']
+        const ethAddress = await this.evmSigners.eth.getAddress()
+        const { decimals } = token
+        const tx = await this.sdk?.eth.lockDeposit({
+          ethAddress,
+          signer: this.evmSigners.eth,
+          address: addressBytes,
+          amount: new BigNumber(amount).shiftedBy(decimals),
+          token,
+        })
+
+        return {
+          success: true,
+          txHash: tx.hash,
+          message: '', // TODO: provide more details
+        }
+      } else {
+        throw new Error('network not supported')
+      }
+    } catch (e) {
+      return {
+        success: false,
+        txHash: '',
+        message: e, // TODO: provide more details
+      }
     }
   }
 }

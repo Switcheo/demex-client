@@ -1,4 +1,5 @@
 import BigNumber from 'bignumber.js'
+import { ethers } from 'ethers'
 
 export interface Duration {
   /**
@@ -181,6 +182,8 @@ export interface WalletInitOpts {
   pkey?: string
   mnemonic?: string
   address?: string
+  ethSigner?: ethers.Signer
+  arbSigner?: ethers.Signer
 }
 
 export enum MAINNET_TOKENS {
@@ -243,3 +246,5 @@ export interface UserLeverage {
   market: string
   leverage: number
 }
+
+export type DepositSupportedNetworks = 'eth' | 'arb'
