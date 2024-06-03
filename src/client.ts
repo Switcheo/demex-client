@@ -1,6 +1,6 @@
 import axios from 'axios'
 import BigNumber from 'bignumber.js'
-import { CarbonSDK, CarbonSDKInitOpts, CarbonTx } from 'carbon-js-sdk'
+import { AddressUtils, CarbonSDK, CarbonSDKInitOpts, CarbonTx } from 'carbon-js-sdk'
 import { MsgCreateOrder } from 'carbon-js-sdk/lib/codec/Switcheo/carbon/order/tx'
 import dayjs from 'dayjs'
 import Long from 'long'
@@ -1104,8 +1104,7 @@ export class Client {
     }
   }
 
-  // async depositUSDC(amount: number, network: DepositSupportedNetworks): Promise<Txn> {
-  async depositUSDC(amount: number, network: DepositSupportedNetworks) {
+  async depositUSDC(amount: number, network: DepositSupportedNetworks): Promise<Txn> {
     const addressBytes = SWTHAddress.getAddressBytes(
       this.sdk?.wallet?.bech32Address!,
       this.sdk?.network!
@@ -1156,6 +1155,44 @@ export class Client {
         success: false,
         txHash: '',
         message: e, // TODO: provide more details
+      }
+    }
+  }
+
+  async withdrawUSDC(address: string, amount: number, network: DepositSupportedNetworks) {
+    let denom = null
+    if (network === 'arb') {
+      denom = 'usdc.1.19.f9afe3'
+    } else if (network === 'eth') {
+      denom = 'usdc.1.2.343151'
+    } else {
+      throw new Error('network not supported')
+    }
+    const BN_ZERO = new BigNumber(0)
+
+    try {
+      const tx = (await this.sdk.coin.createWithdrawal({
+        denom,
+        toAddress: address.substring(2),
+        amount: this.sdk.token.toUnitless(denom, new BigNumber(amount)) ?? BN_ZERO,
+        feeAmount:
+          // sdk.token.toUnitless(blockchainFeeDenom, withdrawFees).integerValue() ??
+          BN_ZERO,
+        feeAddress: AddressUtils.SWTHAddress.encode(this.sdk.networkConfig.feeAddress, {
+          network: this.sdk.network,
+        }),
+        feeDenom: denom,
+      })) as any
+      return {
+        success: true,
+        txHash: tx.transactionHash,
+        message: '', // TODO: provide more details
+      }
+    } catch (e) {
+      return {
+        success: false,
+        txHash: '',
+        message: e,
       }
     }
   }
