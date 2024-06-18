@@ -567,6 +567,7 @@ export class Client {
         basePrecision: market.basePrecision.toNumber(),
         quotePrecision: market.quotePrecision.toNumber(),
         tickSize: new BigNumber(market.tickSize).shiftedBy(-18).toNumber(),
+        lotSize: new BigNumber(market.lotSize).toNumber(),
       }
       this.marketsInfo[market.id] = marketInfo
     }
@@ -748,6 +749,8 @@ export class Client {
       avgEntryPrice: 0,
       lots: 0,
       side: '',
+      marketId: '',
+      market: '',
     }
 
     if (!this.perpMarkets[symbol]) return empty
@@ -929,7 +932,7 @@ export class Client {
         fundingRate: this.stats[m].fundingRate
           ? this.stats[m].fundingRate
           : premiumRateAnnual.dp(2).toNumber(),
-        id: m,
+        marketId: m,
         indexPrice: this.stats[m].indexPrice,
         lastPrice: this.stats[m].lastPrice,
         markPrice: this.stats[m].markPrice,
@@ -1159,12 +1162,15 @@ export class Client {
     }
   }
 
-  async withdrawUSDC(address: string, amount: number, network: DepositSupportedNetworks) {
+  async withdrawUSDC(amount: number, network: DepositSupportedNetworks) {
     let denom = null
+    let toAddress = ''
     if (network === 'arb') {
       denom = 'usdc.1.19.f9afe3'
+      toAddress = await this.evmSigners.arb.getAddress()
     } else if (network === 'eth') {
       denom = 'usdc.1.2.343151'
+      toAddress = await this.evmSigners.eth.getAddress()
     } else {
       throw new Error('network not supported')
     }
@@ -1173,11 +1179,9 @@ export class Client {
     try {
       const tx = (await this.sdk.coin.createWithdrawal({
         denom,
-        toAddress: address.substring(2),
+        toAddress: toAddress.substring(2),
         amount: this.sdk.token.toUnitless(denom, new BigNumber(amount)) ?? BN_ZERO,
-        feeAmount:
-          // sdk.token.toUnitless(blockchainFeeDenom, withdrawFees).integerValue() ??
-          BN_ZERO,
+        feeAmount: BN_ZERO, // TODO: pay fees
         feeAddress: AddressUtils.SWTHAddress.encode(this.sdk.networkConfig.feeAddress, {
           network: this.sdk.network,
         }),

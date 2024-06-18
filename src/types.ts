@@ -38,9 +38,11 @@ export interface MarketParams {
   id: string
   displayName?: string
   description?: string
-  lotSize: string
+  lotSize: number
   tickSize: number
   minQuantity: string
+  base: string
+  quote: string
   /** futures only */
   riskStepSize: string
   initialMarginBase: string
@@ -59,6 +61,10 @@ export interface MarketParams {
   indexOracleId: string
 }
 
+export interface PerpMarketParams extends MarketParams {
+  market: string
+}
+
 export interface PriceLevel {
   price: number
   quantity: number
@@ -74,6 +80,14 @@ export interface Balance {
   order: BigNumber
   position: BigNumber
   total: BigNumber
+}
+
+export interface WalletBalance {
+  available: number
+  order: number
+  position: number
+  symbol: string
+  denom: string
 }
 
 export interface Order {
@@ -101,7 +115,8 @@ export interface Order {
 }
 
 export interface Position {
-  market?: string
+  marketId: string
+  market: string
   address?: string
   side?: string
   openedBlockHeight?: number
@@ -196,8 +211,8 @@ export interface UsageMultiplier {
 }
 
 export interface MarketStats {
-  fundingRate: number
-  id: string
+  fundingRate?: number
+  marketId: string
   indexPrice: number
   lastPrice: number
   markPrice: number
@@ -248,3 +263,13 @@ export interface UserLeverage {
 }
 
 export type DepositSupportedNetworks = 'eth' | 'arb'
+
+export interface AccountInfoResponse {
+  address: string
+  pub_key: {
+    '@type': string
+    key: string
+  }
+  account_number: string
+  sequence: string
+}

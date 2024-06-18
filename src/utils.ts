@@ -31,8 +31,10 @@ export function humanizeOrder(o: any, marketParams: MarketParams): Order {
   return snakeToCamel(order)
 }
 export function humanizePosition(p: any, marketParams: MarketParams): Position {
+  const market = marketParams.displayName.split('_')[0]
   const position = {
     ...p,
+    market,
     realized_pnl: toHumanQuantity(p.realized_pnl, 18),
     max_lots: toHumanQuantity(p.max_lots, marketParams.basePrecision),
     total_fee_amount: toHumanQuantity(p.total_fee_amount, 18),
