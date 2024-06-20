@@ -144,7 +144,11 @@ export async function getAccountInfo(address: string): Promise<AccountInfoRespon
   return res
 }
 
-export function updateLeverageMsg(address: string, marketId: string, leverage: number) {
+export function updateLeverageMsg(
+  address: string,
+  marketId: string,
+  leverage: number
+): EncodeObject {
   const value = MsgSetLeverage.fromPartial({
     creator: address,
     marketId,

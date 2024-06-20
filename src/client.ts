@@ -32,6 +32,7 @@ import {
   UserLeverage,
   Trade,
   DepositSupportedNetworks,
+  ClientOpts,
 } from './types'
 import {
   sleep,
@@ -52,7 +53,7 @@ export class Client {
   tokensInfo: { [market: string]: Token }
   marketsInfo: { [market: string]: MarketParams }
   perpMarkets: { [market: string]: MarketParams }
-  networkConfig: CarbonSDKInitOpts
+  clientOptions: ClientOpts
   ws: WebSocket
   orderbookChannels: string[]
   address: string | null
@@ -87,12 +88,12 @@ export class Client {
     arb: ethers.Signer | null
   }
 
-  constructor(options?: CarbonSDKInitOpts) {
+  constructor(options?: ClientOpts) {
     this.tokensInfo = {}
     this.marketsInfo = {}
     this.perpMarkets = {}
     this.sdk = null
-    this.networkConfig = options
+    this.clientOptions = options
     this.orderbookChannels = []
     this.subscribeAccount = false
     this.address = null
@@ -129,7 +130,7 @@ export class Client {
       throw new Error('client already initialized')
     }
 
-    const settings = this.networkConfig || { network: CarbonSDK.Network.MainNet }
+    const settings = this.clientOptions || { network: CarbonSDK.Network.MainNet }
     this.sdk = await CarbonSDK.instance(settings)
 
     if (settings.network === CarbonSDK.Network.MainNet) {
@@ -166,8 +167,11 @@ export class Client {
 
     await this.updateMarketsInfo()
     await this.updateTokensInfo()
+    await this.getMarketStats()
     // this.fetchOraclePrices()
-    this.fetchMarketStats()
+
+    if (this.clientOptions && this.clientOptions.enablePolling) {
+    }
     this.initialized = true
   }
 
@@ -441,8 +445,6 @@ export class Client {
                 const { market_id } = o
                 if (o.type === 'update') {
                   const { status } = o
-                  console.log(this.openOrders[market_id])
-                  console.log(o)
                   const index = this.openOrders[market_id].findIndex(
                     order => order.id === o.id
                   )
@@ -560,6 +562,7 @@ export class Client {
       },
     })
     this.mapPerpMarkets(marketsAll.markets)
+
     for (const market of marketsAll.markets) {
       // let marketInfo = mapKeys(market, (v, k) => camelCase(k))
       const marketInfo = {
@@ -571,6 +574,7 @@ export class Client {
       }
       this.marketsInfo[market.id] = marketInfo
     }
+    return this.perpMarkets
   }
   /* Gets all tokens parameters */
   async updateTokensInfo() {
@@ -598,41 +602,39 @@ export class Client {
     }
   }
 
-  async fetchMarketStats(): Promise<void> {
-    while (true) {
-      try {
-        const url = 'https://api.carbon.network/carbon/marketstats/v1/stats'
-        const { marketstats } = (await axios.get(url)).data
-        for (const m of marketstats) {
-          if (m.market_type === 'futures') {
-            const info = this.marketsInfo[m.market_id]
-            if (info.isActive) {
-              const { basePrecision, quotePrecision } = info
-              const markPrice = new BigNumber(m.mark_price).shiftedBy(
-                basePrecision - quotePrecision
-              )
-              const indexPrice = new BigNumber(m.index_price).shiftedBy(
-                basePrecision - quotePrecision
-              )
-              const lastPrice = new BigNumber(m.last_price).shiftedBy(
-                basePrecision - quotePrecision
-              )
-              const day_quote_volume = new BigNumber(m.day_quote_volume).shiftedBy(-18)
+  async updateMarketsStats(): Promise<void> {
+    try {
+      const now = new Date()
+      const url = 'https://api.carbon.network/carbon/marketstats/v1/stats'
+      const { marketstats } = (await axios.get(url)).data
+      for (const m of marketstats) {
+        if (m.market_type === 'futures') {
+          const info = this.marketsInfo[m.market_id]
+          if (info.isActive && info.expiryTime < now) {
+            const { basePrecision, quotePrecision } = info
+            const markPrice = new BigNumber(m.mark_price).shiftedBy(
+              basePrecision - quotePrecision
+            )
+            const indexPrice = new BigNumber(m.index_price).shiftedBy(
+              basePrecision - quotePrecision
+            )
+            const lastPrice = new BigNumber(m.last_price).shiftedBy(
+              basePrecision - quotePrecision
+            )
+            const day_quote_volume = new BigNumber(m.day_quote_volume).shiftedBy(-18)
 
-              this.stats[m.market_id] = {
-                markPrice: markPrice.dp(indexPrice.dp()).toNumber(),
-                indexPrice: indexPrice.toNumber(),
-                premiumRate: parseFloat(m.premium_rate),
-                volume: day_quote_volume.dp(0).toNumber(),
-                lastPrice: lastPrice.toNumber(),
-              }
+            this.stats[m.market_id] = {
+              markPrice: markPrice.dp(indexPrice.dp()).toNumber(),
+              indexPrice: indexPrice.toNumber(),
+              premiumRate: parseFloat(m.premium_rate),
+              volume: day_quote_volume.dp(0).toNumber(),
+              lastPrice: lastPrice.toNumber(),
             }
           }
         }
-      } catch (e) {
-      } finally {
-        await sleep(5555)
       }
+    } catch (e) {
+      console.log('error fetching market stats', e)
     }
   }
 
@@ -650,12 +652,15 @@ export class Client {
         marketInfo.isActive
       ) {
         const key = marketInfo.displayName.split('_')[0]
-        this.marketIdtoSymbol[marketInfo.name] = key
+        this.marketIdtoSymbol[marketInfo.id] = key
         perps[key] = {
           ...market,
           basePrecision: market.basePrecision.toNumber(),
           quotePrecision: market.quotePrecision.toNumber(),
           tickSize: new BigNumber(market.tickSize).shiftedBy(-18).toNumber(),
+          lotSize: new BigNumber(market.lotSize)
+            .shiftedBy(-market.basePrecision.toNumber())
+            .toNumber(),
         }
         this.oraclesIdtoSymbol[market.indexOracleId] = market.displayName.split('_')[0]
       }
@@ -682,8 +687,8 @@ export class Client {
       'https://api.carbon.network/carbon/perpspool/v1/markets_liquidity_usage_multiplier'
     )
     for (const mkt of usageMultiplier.data.markets_liquidity_usage_multiplier) {
-      const { market, multiplier } = mkt
-      usageMultiplierData[market] = new BigNumber(multiplier)
+      const { market_id, multiplier } = mkt
+      usageMultiplierData[market_id] = new BigNumber(multiplier)
     }
 
     return usageMultiplierData
@@ -822,6 +827,7 @@ export class Client {
   }
 
   async getMarketStats(): Promise<MarketStats[]> {
+    await this.updateMarketsStats()
     const usageMultiplier = await this.getUsageMultiplier()
     const perpPools = await this.getPerpPools()
     const poolStats = (
@@ -894,7 +900,6 @@ export class Client {
           .times(borrowFeeMultiplier)
           .times(marketLiquidityUsageMultiplier)
           .times(maxBorrowFee)
-
         if (lots.isPositive()) {
           borrowRate = borrowRate.times(new BigNumber(-1))
         }
@@ -914,7 +919,7 @@ export class Client {
           .times(24 * 365)
           .times(100)
         const rate = premiumRateAnnual.plus(borrowRateAnnual)
-        const symbol = this.marketIdtoSymbol[market_id]
+        // const symbol = this.marketIdtoSymbol[market_id]
         this.stats[market_id].fundingRate = rate.dp(2).toNumber()
       }
     }

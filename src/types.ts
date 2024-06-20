@@ -1,4 +1,5 @@
 import BigNumber from 'bignumber.js'
+import { CarbonSDKInitOpts } from 'carbon-js-sdk'
 import { ethers } from 'ethers'
 
 export interface Duration {
@@ -272,4 +273,8 @@ export interface AccountInfoResponse {
   }
   account_number: string
   sequence: string
+}
+
+export interface ClientOpts extends CarbonSDKInitOpts {
+  enablePolling?: boolean
 }
