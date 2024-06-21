@@ -41,17 +41,17 @@ export interface MarketParams {
   description?: string
   lotSize: number
   tickSize: number
-  minQuantity: string
+  minQuantity: number
   base: string
   quote: string
   /** futures only */
-  riskStepSize: string
-  initialMarginBase: string
-  initialMarginStep: string
-  maintenanceMarginRatio: string
-  maxLiquidationOrderTicket: string
+  riskStepSize: number
+  initialMarginBase: number
+  initialMarginStep: number
+  maintenanceMarginRatio: number
+  maxLiquidationOrderTicket: number
   maxLiquidationOrderDuration?: Duration
-  impactSize: string
+  impactSize: number
   markPriceBand?: number
   lastPriceProtectedBand?: number
   isActive?: boolean

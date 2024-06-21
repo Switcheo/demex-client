@@ -551,7 +551,7 @@ export class Client {
     }
   }
   /* Gets all markets parameters */
-  async updateMarketsInfo() {
+  async updateMarketsInfo(): Promise<{ [symbol: string]: MarketParams }> {
     const marketsAll = await this.sdk!.query.market.MarketAll({
       pagination: {
         limit: Long.fromNumber(500),
@@ -561,21 +561,46 @@ export class Client {
         key: new Uint8Array(),
       },
     })
-    this.mapPerpMarkets(marketsAll.markets)
 
+    const markets = []
     for (const market of marketsAll.markets) {
-      // let marketInfo = mapKeys(market, (v, k) => camelCase(k))
+      const basePrecision = market.basePrecision.toNumber()
+      const quotePrecision = market.quotePrecision.toNumber()
       const marketInfo = {
         ...market,
-        basePrecision: market.basePrecision.toNumber(),
-        quotePrecision: market.quotePrecision.toNumber(),
-        tickSize: new BigNumber(market.tickSize).shiftedBy(-18).toNumber(),
-        lotSize: new BigNumber(market.lotSize).toNumber(),
+        basePrecision,
+        quotePrecision,
+        tickSize: new BigNumber(market.tickSize)
+          .shiftedBy(basePrecision - quotePrecision - 18)
+          .toNumber(),
+        lotSize: new BigNumber(market.lotSize).shiftedBy(-basePrecision).toNumber(),
+        minQuantity: new BigNumber(market.minQuantity)
+          .shiftedBy(-basePrecision)
+          .toNumber(),
+        riskStepSize: new BigNumber(market.riskStepSize)
+          .shiftedBy(-basePrecision)
+          .toNumber(),
+        initialMarginBase: new BigNumber(market.initialMarginBase)
+          .shiftedBy(-basePrecision)
+          .toNumber(),
+        initialMarginStep: new BigNumber(market.initialMarginStep)
+          .shiftedBy(-basePrecision)
+          .toNumber(),
+        maintenanceMarginRatio: new BigNumber(market.maintenanceMarginRatio)
+          .shiftedBy(-basePrecision)
+          .toNumber(),
+        maxLiquidationOrderTicket: new BigNumber(market.maxLiquidationOrderTicket)
+          .shiftedBy(-basePrecision)
+          .toNumber(),
+        impactSize: new BigNumber(market.impactSize).shiftedBy(-basePrecision).toNumber(),
       }
       this.marketsInfo[market.id] = marketInfo
+      markets.push(marketInfo)
     }
+    this.mapPerpMarkets(markets)
     return this.perpMarkets
   }
+
   /* Gets all tokens parameters */
   async updateTokensInfo() {
     const tokensAll = await this.sdk!.query.coin.TokenAll({
@@ -600,6 +625,7 @@ export class Client {
         this.tokensInfo[tokenInfo.denom] = tokenInfo
       }
     }
+    return this.tokensInfo
   }
 
   async updateMarketsStats(): Promise<void> {
@@ -653,15 +679,7 @@ export class Client {
       ) {
         const key = marketInfo.displayName.split('_')[0]
         this.marketIdtoSymbol[marketInfo.id] = key
-        perps[key] = {
-          ...market,
-          basePrecision: market.basePrecision.toNumber(),
-          quotePrecision: market.quotePrecision.toNumber(),
-          tickSize: new BigNumber(market.tickSize).shiftedBy(-18).toNumber(),
-          lotSize: new BigNumber(market.lotSize)
-            .shiftedBy(-market.basePrecision.toNumber())
-            .toNumber(),
-        }
+        perps[key] = market
         this.oraclesIdtoSymbol[market.indexOracleId] = market.displayName.split('_')[0]
       }
     }
