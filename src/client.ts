@@ -552,26 +552,21 @@ export class Client {
   }
   /* Gets all markets parameters */
   async updateMarketsInfo(): Promise<{ [symbol: string]: MarketParams }> {
-    const marketsAll = await this.sdk!.query.market.MarketAll({
-      pagination: {
-        limit: Long.fromNumber(500),
-        countTotal: false,
-        reverse: false,
-        offset: Long.UZERO,
-        key: new Uint8Array(),
-      },
-    })
+    const url = `https://api.carbon.network/carbon/market/v1/markets?pagination.limit=800`
+    const res = (await axios.get(url)).data.markets
 
     const markets = []
-    for (const market of marketsAll.markets) {
-      const basePrecision = market.basePrecision.toNumber()
-      const quotePrecision = market.quotePrecision.toNumber()
+    for (const m of res) {
+      const market = mapKeys(m, (v, k) => camelCase(k))
+      console.log(market)
+      const basePrecision = parseInt(market.basePrecision)
+      const quotePrecision = parseInt(market.quotePrecision)
       const marketInfo = {
         ...market,
         basePrecision,
         quotePrecision,
         tickSize: new BigNumber(market.tickSize)
-          .shiftedBy(basePrecision - quotePrecision - 18)
+          .shiftedBy(basePrecision - quotePrecision)
           .toNumber(),
         lotSize: new BigNumber(market.lotSize).shiftedBy(-basePrecision).toNumber(),
         minQuantity: new BigNumber(market.minQuantity)
@@ -580,19 +575,14 @@ export class Client {
         riskStepSize: new BigNumber(market.riskStepSize)
           .shiftedBy(-basePrecision)
           .toNumber(),
-        initialMarginBase: new BigNumber(market.initialMarginBase)
-          .shiftedBy(-basePrecision)
-          .toNumber(),
-        initialMarginStep: new BigNumber(market.initialMarginStep)
-          .shiftedBy(-basePrecision)
-          .toNumber(),
-        maintenanceMarginRatio: new BigNumber(market.maintenanceMarginRatio)
-          .shiftedBy(-basePrecision)
-          .toNumber(),
+        initialMarginBase: new BigNumber(market.initialMarginBase).toNumber(),
+        initialMarginStep: new BigNumber(market.initialMarginStep).toNumber(),
+        maintenanceMarginRatio: new BigNumber(market.maintenanceMarginRatio).toNumber(),
         maxLiquidationOrderTicket: new BigNumber(market.maxLiquidationOrderTicket)
           .shiftedBy(-basePrecision)
           .toNumber(),
         impactSize: new BigNumber(market.impactSize).shiftedBy(-basePrecision).toNumber(),
+        createdBlockHeight: parseInt(market.createdBlockHeight),
       }
       this.marketsInfo[market.id] = marketInfo
       markets.push(marketInfo)
@@ -603,22 +593,16 @@ export class Client {
 
   /* Gets all tokens parameters */
   async updateTokensInfo() {
-    const tokensAll = await this.sdk!.query.coin.TokenAll({
-      pagination: {
-        limit: Long.fromNumber(1500),
-        countTotal: false,
-        reverse: false,
-        offset: Long.UZERO,
-        key: new Uint8Array(),
-      },
-    })
-    for (const token of tokensAll.tokens) {
+    const url = `https://api.carbon.network/carbon/coin/v1/tokens?pagination.limit=1500`
+    const res = (await axios.get(url)).data.tokens
+    for (const t of res) {
+      const token = mapKeys(t, (v, k) => camelCase(k))
       const tokenInfo = {
         ...token,
-        decimals: token.decimals.toNumber(),
-        chainId: token.chainId.toNumber(),
-        createdBlockHeight: token.createdBlockHeight.toNumber(),
-        bridgeId: token.bridgeId.toNumber(),
+        decimals: parseInt(token.decimals),
+        chainId: parseInt(token.chainId),
+        createdBlockHeight: parseInt(token.createdBlockHeight),
+        bridgeId: parseInt(token.bridgeId),
       }
 
       if (tokenInfo.isActive) {
