@@ -16,163 +16,169 @@ import { BaseAccount } from 'carbon-js-sdk/lib/codec/cosmos/auth/v1beta1/auth'
 import { toBase64, toHex, fromBase64 } from '@cosmjs/encoding'
 import { EncodeObject } from '@cosmjs/proto-signing'
 
-export async function getTokens() {
-  const tokens = {}
-  const url = `https://api.carbon.network/carbon/coin/v1/tokens?pagination.limit=1500`
-  const res = (await axios.get(url)).data.tokens
+export class CarbonAPI {
+  async getTokens() {
+    const tokens = {}
+    const url = `https://api.carbon.network/carbon/coin/v1/tokens?pagination.limit=1500`
+    const res = (await axios.get(url)).data.tokens
 
-  for (const token of res) {
-    const tokenInfo = mapKeys(token, (v, k) => camelCase(k))
-    tokens[tokenInfo.denom] = tokenInfo
-  }
-  return tokens
-}
-
-export async function getPerpMarkets(): Promise<PerpMarketParams[]> {
-  const perpMarkets = []
-  const url = `https://api.carbon.network/carbon/market/v1/markets?pagination.limit=800`
-  const res = (await axios.get(url)).data.markets
-
-  for (const market of res) {
-    const marketInfo = mapKeys(market, (v, k) => camelCase(k))
-    if (
-      marketInfo.marketType === 'futures' &&
-      marketInfo.description.includes('Perpetual') &&
-      marketInfo.isActive
-    ) {
-      const basePrecision = parseInt(marketInfo.basePrecision)
-      const quotePrecision = parseInt(marketInfo.quotePrecision)
-      const key = marketInfo.displayName.split('_')[0]
-      const lotSize = new BigNumber(marketInfo.lotSize)
-        .shiftedBy(-basePrecision)
-        .toNumber()
-      const tickSize = new BigNumber(marketInfo.tickSize)
-        .shiftedBy(basePrecision - quotePrecision)
-        .toNumber()
-      const minQuantity = new BigNumber(marketInfo.minQuantity)
-        .shiftedBy(-basePrecision)
-        .toNumber()
-
-      const riskStepSize = new BigNumber(marketInfo.riskStepSize)
-        .shiftedBy(-basePrecision)
-        .toNumber()
-      const maxLiquidationOrderTicket = new BigNumber(
-        marketInfo.maxLiquidationOrderTicket
-      )
-        .shiftedBy(-basePrecision)
-        .toNumber()
-      const impactSize = new BigNumber(marketInfo.impactSize)
-        .shiftedBy(-basePrecision)
-        .toNumber()
-      perpMarkets.push({
-        market: key,
-        ...marketInfo,
-        lotSize,
-        tickSize,
-        minQuantity,
-        riskStepSize,
-        maxLiquidationOrderTicket,
-        impactSize,
-      })
+    for (const token of res) {
+      const tokenInfo = mapKeys(token, (v, k) => camelCase(k))
+      tokens[tokenInfo.denom] = tokenInfo
     }
+    return tokens
   }
-  return perpMarkets
-}
 
-export async function getUserLeverage(address, market): Promise<any> {
-  market = market.replace('/', '%252F')
-  const url = `https://api.carbon.network/carbon/leverage/v1/leverages/${address}/${market}`
-  const res = (await axios.get(url)).data.market_leverage
-  return res
-}
-
-export async function getPositions(
-  address: string,
-  marketsParams: PerpMarketParams[]
-): Promise<Position[]> {
-  const positions: Position[] = []
-  const url = `https://api.carbon.network/carbon/position/v1/positions?status=open&address=${address}`
-  const res = (await axios.get(url)).data.positions
-  for (const market of res) {
-    const marketInfo = marketsParams.find(p => p.id === market.market_id)
-    // console.log(market.market_id, marketInfo)
-    const p = humanizePosition(market, marketInfo)
-    positions.push(p)
+  async getUserLeverage(address, market): Promise<number> {
+    market = market.replace('/', '%252F')
+    const url = `https://api.carbon.network/carbon/leverage/v1/leverages/${address}/${market}`
+    const res = parseFloat((await axios.get(url)).data.market_leverage.leverage)
+    return res
   }
-  return positions
-}
 
-export async function getMarketStats(): Promise<MarketStats[]> {
-  const url = `https://api.carbon.network/carbon/marketstats/v1/stats`
-  const res = (await axios.get(url)).data.marketstats
-  const stats = res.map(s => {
-    return mapKeys(s, (v, k) => camelCase(k))
-  })
-  stats.indexPrice = new BigNumber(stats.indexPrice).toNumber()
-  stats.markPrice = new BigNumber(stats.markPrice).toNumber()
+  async getMarketsInfo(): Promise<PerpMarketParams[]> {
+    const url = `https://api.carbon.network/carbon/market/v1/markets?pagination.limit=800`
+    const res = (await axios.get(url)).data.markets
+    const marketsList = []
+    for (const m of res) {
+      if (
+        m.market_type === 'futures' &&
+        m.description.includes('Perpetual') &&
+        m.is_active
+      ) {
+        const market = mapKeys(m, (v, k) => camelCase(k))
+        const basePrecision = parseInt(market.basePrecision)
+        const quotePrecision = parseInt(market.quotePrecision)
+        const marketInfo = {
+          ...market,
+          basePrecision,
+          quotePrecision,
+          tickSize: new BigNumber(market.tickSize)
+            .shiftedBy(basePrecision - quotePrecision)
+            .toNumber(),
+          lotSize: new BigNumber(market.lotSize).shiftedBy(-basePrecision).toNumber(),
+          minQuantity: new BigNumber(market.minQuantity)
+            .shiftedBy(-basePrecision)
+            .toNumber(),
+          riskStepSize: new BigNumber(market.riskStepSize)
+            .shiftedBy(-basePrecision)
+            .toNumber(),
+          initialMarginBase: new BigNumber(market.initialMarginBase).toNumber(),
+          initialMarginStep: new BigNumber(market.initialMarginStep).toNumber(),
+          maintenanceMarginRatio: new BigNumber(market.maintenanceMarginRatio).toNumber(),
+          maxLiquidationOrderTicket: new BigNumber(market.maxLiquidationOrderTicket)
+            .shiftedBy(-basePrecision)
+            .toNumber(),
+          impactSize: new BigNumber(market.impactSize)
+            .shiftedBy(-basePrecision)
+            .toNumber(),
+          createdBlockHeight: parseInt(market.createdBlockHeight),
+        }
+        const key = marketInfo.displayName.split('_')[0]
+        marketsList.push({ ...marketInfo, market: key })
+      }
+    }
+    return marketsList
+  }
 
-  return stats
-}
+  async getPositions(address: string): Promise<Position[]> {
+    const marketsParams = await this.getMarketsInfo()
+    const positions: Position[] = []
+    const url = `https://api.carbon.network/carbon/position/v1/positions?status=open&address=${address}`
+    const res = (await axios.get(url)).data.positions
+    for (const market of res) {
+      const marketInfo = marketsParams.find(p => p.id === market.market_id)
+      // console.log(market.market_id, marketInfo)
+      const p = humanizePosition(market, marketInfo)
+      positions.push(p)
+    }
+    return positions
+  }
 
-export async function getBalances(
-  address: string,
-  tokenParams: any
-): Promise<WalletBalance[]> {
-  const url = `https://api.carbon.network/carbon/coin/v1/balances/${address}`
-  const res = (await axios.get(url)).data.token_balances
-  const balances = []
-  for (const token of res) {
-    let { denom, available, order, position } = token
-    const tokenInfo = tokenParams[denom]
-    // console.log(tokenInfo)
-    if (!tokenInfo) {
-      console.log('token not found', denom)
+  async getMarketStats(marketParams: PerpMarketParams[]): Promise<MarketStats[]> {
+    const url = `https://api.carbon.network/carbon/marketstats/v1/stats`
+    const res = (await axios.get(url)).data.marketstats
+    const stats = res.map(s => {
+      return mapKeys(s, (v, k) => camelCase(k))
+    })
+    // console.log(marketParams)
+    for (const s of stats) {
+      const marketParam = marketParams.find(p => p.id === s.marketId)
+      if (!marketParam) continue
+      const diff = marketParam.basePrecision - marketParam.quotePrecision
+
+      s.dayOpen = new BigNumber(s.dayOpen).shiftedBy(diff).toNumber()
+      s.dayHigh = new BigNumber(s.dayHigh).shiftedBy(diff).toNumber()
+      s.dayLow = new BigNumber(s.dayLow).shiftedBy(diff).toNumber()
+      s.dayClose = new BigNumber(s.dayClose).shiftedBy(diff).toNumber()
+      s.dayVolume = new BigNumber(s.dayVolume)
+        .shiftedBy(-marketParam.basePrecision)
+        .toNumber()
+      s.dayQuoteVolume = new BigNumber(s.dayQuoteVolume).shiftedBy(-18).toNumber()
+      s.indexPrice = new BigNumber(s.indexPrice).shiftedBy(diff).toNumber()
+      s.markPrice = new BigNumber(s.markPrice).shiftedBy(diff).toNumber()
+      s.lastPrice = new BigNumber(s.lastPrice).shiftedBy(diff).toNumber()
+      s.openInterest = new BigNumber(s.openInterest)
+        .shiftedBy(-marketParam.basePrecision)
+        .toNumber()
     }
 
-    available = new BigNumber(available).shiftedBy(-tokenInfo.decimals).toNumber()
-    order = new BigNumber(order).shiftedBy(-tokenInfo.decimals).toNumber()
-    position = new BigNumber(position).shiftedBy(-tokenInfo.decimals).toNumber()
-    const { symbol } = tokenInfo
-    balances.push({ symbol, available, order, position, denom })
+    return stats
   }
-  return balances
-}
 
-export async function getAccountInfo(address: string): Promise<AccountInfoResponse> {
-  const url = `https://api.carbon.network/cosmos/auth/v1beta1/account_info/${address}`
-  const res = (await axios.get(url)).data.info
-  return res
-}
+  async getBalances(address: string, tokenParams: any): Promise<WalletBalance[]> {
+    const url = `https://api.carbon.network/carbon/coin/v1/balances/${address}`
+    const res = (await axios.get(url)).data.token_balances
+    const balances = []
+    for (const token of res) {
+      let { denom, available, order, position } = token
+      const tokenInfo = tokenParams[denom]
+      // console.log(tokenInfo)
+      if (!tokenInfo) {
+        console.log('token not found', denom)
+      }
 
-export function updateLeverageMsg(
-  address: string,
-  marketId: string,
-  leverage: number
-): EncodeObject {
-  const value = MsgSetLeverage.fromPartial({
-    creator: address,
-    marketId,
-    leverage: leverage.toString(),
-  })
-  const msg = {
-    typeUrl: CarbonTx.Types.MsgSetLeverage,
-    value,
+      available = new BigNumber(available).shiftedBy(-tokenInfo.decimals).toNumber()
+      order = new BigNumber(order).shiftedBy(-tokenInfo.decimals).toNumber()
+      position = new BigNumber(position).shiftedBy(-tokenInfo.decimals).toNumber()
+      const { symbol } = tokenInfo
+      balances.push({ symbol, available, order, position, denom })
+    }
+    return balances
   }
-  return msg
-}
 
-export async function signAndHex(sdk: CarbonSDK, msgs: EncodeObject[]): Promise<string> {
-  const result = await sdk.wallet.query.auth.Account({
-    address: sdk.wallet.bech32Address,
-  })
-  const { accountNumber, sequence, address } = BaseAccount.decode(result.account.value)
-  const sequenceStr = sequence.toString()
-  const accountNumberStr = accountNumber.toString()
-  const signedTx = await sdk.wallet.getSignedTx(
-    sdk.wallet.bech32Address,
-    msgs,
-    parseInt(sequenceStr),
-    {}
-  )
-  return toBase64(signedTx.signatures[0])
+  async getAccountInfo(address: string): Promise<AccountInfoResponse> {
+    const url = `https://api.carbon.network/cosmos/auth/v1beta1/account_info/${address}`
+    const res = (await axios.get(url)).data.info
+    return res
+  }
+
+  updateLeverageMsg(address: string, marketId: string, leverage: number): EncodeObject {
+    const value = MsgSetLeverage.fromPartial({
+      creator: address,
+      marketId,
+      leverage: leverage.toString(),
+    })
+    const msg = {
+      typeUrl: CarbonTx.Types.MsgSetLeverage,
+      value,
+    }
+    return msg
+  }
+
+  async signAndHex(sdk: CarbonSDK, msgs: EncodeObject[]): Promise<string> {
+    const result = await sdk.wallet.query.auth.Account({
+      address: sdk.wallet.bech32Address,
+    })
+    const { accountNumber, sequence, address } = BaseAccount.decode(result.account.value)
+    const sequenceStr = sequence.toString()
+    const accountNumberStr = accountNumber.toString()
+    const signedTx = await sdk.wallet.getSignedTx(
+      sdk.wallet.bech32Address,
+      msgs,
+      parseInt(sequenceStr),
+      {}
+    )
+    return toBase64(signedTx.signatures[0])
+  }
 }

@@ -33,6 +33,7 @@ import {
   Trade,
   DepositSupportedNetworks,
   ClientOpts,
+  PerpMarketParams,
 } from './types'
 import {
   sleep,
@@ -47,6 +48,7 @@ import {
 } from './utils'
 import { ethers } from 'ethers'
 import { SWTHAddress } from 'carbon-js-sdk/lib/util/address'
+import { CarbonAPI } from './apis'
 
 export class Client {
   public sdk: CarbonSDK | null
@@ -87,6 +89,7 @@ export class Client {
     eth: ethers.Signer | null
     arb: ethers.Signer | null
   }
+  api: CarbonAPI
 
   constructor(options?: ClientOpts) {
     this.tokensInfo = {}
@@ -120,6 +123,8 @@ export class Client {
       eth: null,
       arb: null,
     }
+
+    this.api = new CarbonAPI()
   }
 
   /**
@@ -551,44 +556,15 @@ export class Client {
     }
   }
   /* Gets all markets parameters */
-  async updateMarketsInfo(): Promise<{ [symbol: string]: MarketParams }> {
-    const url = `https://api.carbon.network/carbon/market/v1/markets?pagination.limit=800`
-    const res = (await axios.get(url)).data.markets
+  async updateMarketsInfo() {
+    const res = await this.api.getMarketsInfo()
 
     const markets = []
     for (const m of res) {
-      const market = mapKeys(m, (v, k) => camelCase(k))
-      console.log(market)
-      const basePrecision = parseInt(market.basePrecision)
-      const quotePrecision = parseInt(market.quotePrecision)
-      const marketInfo = {
-        ...market,
-        basePrecision,
-        quotePrecision,
-        tickSize: new BigNumber(market.tickSize)
-          .shiftedBy(basePrecision - quotePrecision)
-          .toNumber(),
-        lotSize: new BigNumber(market.lotSize).shiftedBy(-basePrecision).toNumber(),
-        minQuantity: new BigNumber(market.minQuantity)
-          .shiftedBy(-basePrecision)
-          .toNumber(),
-        riskStepSize: new BigNumber(market.riskStepSize)
-          .shiftedBy(-basePrecision)
-          .toNumber(),
-        initialMarginBase: new BigNumber(market.initialMarginBase).toNumber(),
-        initialMarginStep: new BigNumber(market.initialMarginStep).toNumber(),
-        maintenanceMarginRatio: new BigNumber(market.maintenanceMarginRatio).toNumber(),
-        maxLiquidationOrderTicket: new BigNumber(market.maxLiquidationOrderTicket)
-          .shiftedBy(-basePrecision)
-          .toNumber(),
-        impactSize: new BigNumber(market.impactSize).shiftedBy(-basePrecision).toNumber(),
-        createdBlockHeight: parseInt(market.createdBlockHeight),
-      }
-      this.marketsInfo[market.id] = marketInfo
-      markets.push(marketInfo)
+      this.marketsInfo[m.id] = m
+      markets.push(m)
     }
-    this.mapPerpMarkets(markets)
-    return this.perpMarkets
+    return this.mapPerpMarkets(markets)
   }
 
   /* Gets all tokens parameters */
@@ -652,10 +628,11 @@ export class Client {
    * Helper function to retrive all perp markets and assign the underlying market symbol as a key
    */
 
-  mapPerpMarkets(markets) {
+  mapPerpMarkets(markets): PerpMarketParams[] {
+    const marketsList = []
     const perps = {}
-    for (const market of markets) {
-      const marketInfo = mapKeys(market, (v, k) => camelCase(k))
+    for (const marketInfo of markets) {
+      // const marketInfo = mapKeys(market, (v, k) => camelCase(k))
       if (
         marketInfo.marketType === 'futures' &&
         marketInfo.description.includes('Perpetual') &&
@@ -663,11 +640,14 @@ export class Client {
       ) {
         const key = marketInfo.displayName.split('_')[0]
         this.marketIdtoSymbol[marketInfo.id] = key
-        perps[key] = market
-        this.oraclesIdtoSymbol[market.indexOracleId] = market.displayName.split('_')[0]
+        perps[key] = marketInfo
+        this.oraclesIdtoSymbol[marketInfo.indexOracleId] =
+          marketInfo.displayName.split('_')[0]
+        marketsList.push({ ...marketInfo, market: key })
       }
     }
     this.perpMarkets = perps
+    return marketsList
   }
 
   /**
