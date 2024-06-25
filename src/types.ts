@@ -275,6 +275,8 @@ export interface AccountInfoResponse {
   sequence: string
 }
 
+export type MappedAddress = string
+
 export interface ClientOpts extends CarbonSDKInitOpts {
   enablePolling?: boolean
 }

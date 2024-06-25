@@ -4,6 +4,7 @@ import axios from 'axios'
 import BigNumber from 'bignumber.js'
 import {
   AccountInfoResponse,
+  MappedAddress,
   MarketStats,
   PerpMarketParams,
   Position,
@@ -150,6 +151,12 @@ export class CarbonAPI {
   async getAccountInfo(address: string): Promise<AccountInfoResponse> {
     const url = `https://api.carbon.network/cosmos/auth/v1beta1/account_info/${address}`
     const res = (await axios.get(url)).data.info
+    return res
+  }
+
+  async getMappedAddress(address: string): Promise<MappedAddress> {
+    const url = `https://api.carbon.network/carbon/evmmerge/v1/mapped_address/${address}`
+    const res = (await axios.get(url)).data.mapped_address
     return res
   }
 
