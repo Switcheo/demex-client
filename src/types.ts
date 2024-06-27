@@ -20,6 +20,9 @@ export interface Duration {
   nanos: number
 }
 
+export interface TokensInfo {
+  [id: string]: Token
+}
 export interface Token {
   id: string
   creator: string

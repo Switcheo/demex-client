@@ -1,5 +1,13 @@
 import BigNumber from 'bignumber.js'
-import { Fill, MarketParams, Order, Position, Trade, UserFill } from './types'
+import {
+  Fill,
+  MarketParams,
+  Order,
+  PerpMarketParams,
+  Position,
+  Trade,
+  UserFill,
+} from './types'
 
 export function sleep(interval: number = 1000) {
   return new Promise(resolve => {
@@ -7,7 +15,10 @@ export function sleep(interval: number = 1000) {
   })
 }
 
-export function toHumanPrice(price: string, params: MarketParams): number {
+export function toHumanPrice(
+  price: string,
+  params: MarketParams | PerpMarketParams
+): number {
   return new BigNumber(price)
     .shiftedBy(params.basePrecision - params.quotePrecision)
     .toNumber()

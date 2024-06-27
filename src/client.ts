@@ -557,7 +557,8 @@ export class Client {
   }
   /* Gets all markets parameters */
   async updateMarketsInfo() {
-    const res = await this.api.getMarketsInfo()
+    const tokensInfo = await this.api.getTokensInfo()
+    const res = await this.api.getMarketsInfo(tokensInfo)
 
     const markets = []
     for (const m of res) {
