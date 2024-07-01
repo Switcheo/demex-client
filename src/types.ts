@@ -281,3 +281,9 @@ export interface AccountInfoResponse {
 export interface ClientOpts extends CarbonSDKInitOpts {
   enablePolling?: boolean
 }
+
+export interface GrantAccountParams {
+  granter: string
+  grantee: string
+  expiry: Date
+}

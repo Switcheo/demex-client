@@ -4,18 +4,32 @@ import axios from 'axios'
 import BigNumber from 'bignumber.js'
 import {
   AccountInfoResponse,
+  GrantAccountParams,
   MarketStats,
   PerpMarketParams,
   Position,
   TokensInfo,
   WalletBalance,
 } from './types'
-import { humanizePosition, toHumanPrice, toHumanQuantity } from './utils'
+import {
+  AuthorizedSignlessMsgs,
+  humanizePosition,
+  toHumanPrice,
+  toHumanQuantity,
+} from './utils'
 import { MsgSetLeverage } from 'carbon-js-sdk/lib/codec/Switcheo/carbon/leverage/tx'
 import { CarbonSDK, CarbonTx, CarbonWallet } from 'carbon-js-sdk'
 import { BaseAccount } from 'carbon-js-sdk/lib/codec/cosmos/auth/v1beta1/auth'
 import { toBase64, toHex, fromBase64 } from '@cosmjs/encoding'
 import { EncodeObject } from '@cosmjs/proto-signing'
+import { MsgGrant } from 'carbon-js-sdk/lib/codec/cosmos/authz/v1beta1/tx'
+import { MsgGrantAllowance } from 'carbon-js-sdk/lib/codec/cosmos/feegrant/v1beta1/tx'
+import { GenericAuthorization } from 'carbon-js-sdk/lib/codec/cosmos/authz/v1beta1/authz'
+import { GrantTypes } from 'carbon-js-sdk/lib/provider/amino/types/grant'
+import {
+  AllowedMsgAllowance,
+  BasicAllowance,
+} from 'carbon-js-sdk/lib/codec/cosmos/feegrant/v1beta1/feegrant'
 
 export class CarbonAPI {
   async getTokensInfo(): Promise<TokensInfo> {
@@ -213,5 +227,76 @@ export class CarbonAPI {
       {}
     )
     return toBase64(signedTx.signatures[0])
+  }
+
+  async broadcastTx(hex: string) {
+    const TM_URL = 'https://tm-api.carbon.network/'
+    const tx = await axios.post(
+      TM_URL,
+      JSON.stringify({
+        jsonrpc: '2.0',
+        id: Date.now(),
+        method: 'broadcast_tx_sync',
+        params: {
+          tx: hex,
+        },
+      }),
+      { headers: { 'Content-Type': 'application/json' } }
+    )
+    return tx
+  }
+
+  async grantAccount(params: GrantAccountParams) {
+    const encodedGrantMsgs = AuthorizedSignlessMsgs.map(msg => {
+      const grantMsg = MsgGrant.fromPartial({
+        granter: params.granter,
+        grantee: params.grantee,
+        grant: {
+          authorization: {
+            typeUrl: GrantTypes.GenericAuthorization,
+            value: GenericAuthorization.encode(
+              GenericAuthorization.fromPartial({
+                msg,
+              })
+            ).finish(),
+          },
+          expiration: params.expiry,
+        },
+      })
+      return {
+        typeUrl: CarbonTx.Types.MsgGrant,
+        value: grantMsg,
+      }
+    })
+
+    let messages = encodedGrantMsgs
+
+    const encodedAllowanceMsg = [
+      {
+        typeUrl: CarbonTx.Types.MsgGrantAllowance,
+        value: MsgGrantAllowance.fromPartial({
+          granter: params.granter,
+          grantee: params.grantee,
+          allowance: {
+            typeUrl: GrantTypes.AllowedMsgAllowance,
+            value: AllowedMsgAllowance.encode(
+              AllowedMsgAllowance.fromPartial({
+                allowance: {
+                  typeUrl: GrantTypes.BasicAllowance,
+                  value: BasicAllowance.encode(
+                    BasicAllowance.fromPartial({
+                      expiration: params.expiry,
+                    })
+                  ).finish(),
+                },
+                allowedMessages: [CarbonTx.Types.MsgExec],
+              })
+            ).finish(),
+          },
+        }),
+      },
+    ]
+    messages.concat(encodedAllowanceMsg)
+    return messages
   }
 }
