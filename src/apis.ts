@@ -12,10 +12,13 @@ import {
 } from './types'
 import { humanizePosition } from './utils'
 import { MsgSetLeverage } from 'carbon-js-sdk/lib/codec/Switcheo/carbon/leverage/tx'
+import { MsgWithdraw } from 'carbon-js-sdk/lib/codec/Switcheo/carbon/coin/tx'
 import { CarbonSDK, CarbonTx, CarbonWallet } from 'carbon-js-sdk'
 import { BaseAccount } from 'carbon-js-sdk/lib/codec/cosmos/auth/v1beta1/auth'
 import { toBase64, toHex, fromBase64 } from '@cosmjs/encoding'
-import { EncodeObject } from '@cosmjs/proto-signing'
+import { EncodeObject, makeAuthInfoBytes } from '@cosmjs/proto-signing'
+import { DEFAULT_FEE } from 'carbon-js-sdk/lib/constant'
+import { TxBody, TxRaw } from 'carbon-js-sdk/lib/codec/cosmos/tx/v1beta1/tx' 
 
 export class CarbonAPI {
   async getTokens() {
@@ -171,6 +174,69 @@ export class CarbonAPI {
       value,
     }
     return msg
+  }
+
+  withdrawMsg(fromAddress: string, toAddress: string, denom: string, amount: string, feeAddress: string): EncodeObject {
+
+    // use defaults for StdFee
+    const feeAmount = DEFAULT_FEE.amount[0].amount
+    const feeDenom = DEFAULT_FEE.amount[0].denom
+
+    const value = MsgWithdraw.fromPartial({
+      creator: fromAddress,
+      toAddress,
+      denom,
+      amount,
+      feeAmount, // default
+      feeAddress,
+      feeDenom, // default
+    });
+
+    const msg = {
+      typeUrl: CarbonTx.Types.MsgWithdraw,
+      value
+    }
+    return msg
+  }
+
+  // implement geteip712Message
+  // combine msg with fee, evmChainId, memo, accountNumber, sequence
+  async geteip712Message(msg: EncodeObject, from: string, chain_id: string, memo: string) {
+    const { account_number, sequence } = await this.getAccountInfo(from)
+    return {
+      ...msg,
+      fee: DEFAULT_FEE,
+      chain_id,
+      memo,
+      account_number,
+      sequence
+    }
+  }
+
+  // implement getTxRawBinary
+  async getTxRawBinary(msg: EncodeObject, signature: string, from: string,  memo: string) {
+
+    const { pub_key, sequence } = await this.getAccountInfo(from) // bad bc fetches twice
+
+    const txBody: TxBody = TxBody.fromPartial({
+      messages: [
+        msg
+      ],
+      memo,
+  });
+
+    // get TxRaw fromPartial
+    const txRaw = TxRaw.fromPartial({
+      bodyBytes: TxBody.encode(txBody).finish(),
+      authInfoBytes: makeAuthInfoBytes([{ pubkey: pub_key, sequence }], DEFAULT_FEE.amount, DEFAULT_FEE.gas, "", ""), // need to fix pubkey and sequence types
+      signatures: [fromBase64(signature)],
+    });
+
+    // convert TxRaw to binary to base64
+    const binary = TxRaw.encode(txRaw).finish();
+    const payload = Buffer.from(binary).toString("base64");
+
+    return payload
   }
 
   async signAndHex(sdk: CarbonSDK, msgs: EncodeObject[]): Promise<string> {
