@@ -180,6 +180,7 @@ export class CarbonAPI {
   withdrawMsg(fromAddress: string, toAddress: string, denom: string, amount: string, feeAddress: string): EncodeObject {
 
     // use defaults for StdFee
+    // TODO: get the right fee for MsgWithdraw
     const feeAmount = DEFAULT_FEE.amount[0].amount
     const feeDenom = DEFAULT_FEE.amount[0].denom
 
@@ -188,9 +189,9 @@ export class CarbonAPI {
       toAddress,
       denom,
       amount,
-      feeAmount, // default
+      feeAmount, 
       feeAddress,
-      feeDenom, // default
+      feeDenom,
     });
 
     const msg = {
@@ -200,21 +201,26 @@ export class CarbonAPI {
     return msg
   }
 
-  // implement geteip712Message
   // combine msg with fee, evmChainId, memo, accountNumber, sequence
   async getEip712Message(msg: EncodeObject, from: string, chain_id: string, memo: string) {
     const { account_number, sequence } = await this.getAccountInfo(from)
+
+    const fee = {
+      amount: {
+        amount: '0',
+        denom: 'swth',
+      },
+      gas: '0',
+    }
     return {
       msg0: msg, // hardcoded as only 1 withdraw msg
-      fee: DEFAULT_FEE,
+      fee, // MsgWithdraw gas_cost = 0?
       chain_id,
       memo,
       account_number,
       sequence
     }
   }
-
-  
 
   // implement getTxRawBinary
   async getTxRawBinary(msg: EncodeObject, signature: string, from: string,  memo: string) {
@@ -239,7 +245,7 @@ export class CarbonAPI {
     // get TxRaw fromPartial
     const txRaw = TxRaw.fromPartial({
       bodyBytes: TxBody.encode(txBody).finish(),
-      authInfoBytes: makeAuthInfoBytes([{ pubkey, sequence: sequenceNumber }], DEFAULT_FEE.amount, gasLimit, "", ""), // need to fix pubkey and sequence types
+      authInfoBytes: makeAuthInfoBytes([{ pubkey, sequence: sequenceNumber }], DEFAULT_FEE.amount, gasLimit, "", ""), // no feeGranter & feePayer
       signatures: [fromBase64(signature)],
     });
 
