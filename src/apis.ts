@@ -16,9 +16,10 @@ import { MsgWithdraw } from 'carbon-js-sdk/lib/codec/Switcheo/carbon/coin/tx'
 import { CarbonSDK, CarbonTx, CarbonWallet } from 'carbon-js-sdk'
 import { BaseAccount } from 'carbon-js-sdk/lib/codec/cosmos/auth/v1beta1/auth'
 import { toBase64, toHex, fromBase64 } from '@cosmjs/encoding'
-import { EncodeObject, makeAuthInfoBytes } from '@cosmjs/proto-signing'
+import { EncodeObject, makeAuthInfoBytes, encodePubkey } from '@cosmjs/proto-signing'
 import { DEFAULT_FEE } from 'carbon-js-sdk/lib/constant'
 import { TxBody, TxRaw } from 'carbon-js-sdk/lib/codec/cosmos/tx/v1beta1/tx' 
+import { parseBN } from 'carbon-js-sdk/lib/util/number'
 
 export class CarbonAPI {
   async getTokens() {
@@ -201,10 +202,10 @@ export class CarbonAPI {
 
   // implement geteip712Message
   // combine msg with fee, evmChainId, memo, accountNumber, sequence
-  async geteip712Message(msg: EncodeObject, from: string, chain_id: string, memo: string) {
+  async getEip712Message(msg: EncodeObject, from: string, chain_id: string, memo: string) {
     const { account_number, sequence } = await this.getAccountInfo(from)
     return {
-      ...msg,
+      msg0: msg, // hardcoded as only 1 withdraw msg
       fee: DEFAULT_FEE,
       chain_id,
       memo,
@@ -213,22 +214,32 @@ export class CarbonAPI {
     }
   }
 
+  
+
   // implement getTxRawBinary
   async getTxRawBinary(msg: EncodeObject, signature: string, from: string,  memo: string) {
 
     const { pub_key, sequence } = await this.getAccountInfo(from) // bad bc fetches twice
 
+    const pubkey = encodePubkey({
+      type: pub_key['@type'],
+      value: pub_key.key
+    })
+
+    const sequenceNumber = parseInt(sequence)
+
     const txBody: TxBody = TxBody.fromPartial({
       messages: [
         msg
       ],
-      memo,
   });
+
+    const gasLimit = Number(DEFAULT_FEE.gas)
 
     // get TxRaw fromPartial
     const txRaw = TxRaw.fromPartial({
       bodyBytes: TxBody.encode(txBody).finish(),
-      authInfoBytes: makeAuthInfoBytes([{ pubkey: pub_key, sequence }], DEFAULT_FEE.amount, DEFAULT_FEE.gas, "", ""), // need to fix pubkey and sequence types
+      authInfoBytes: makeAuthInfoBytes([{ pubkey, sequence: sequenceNumber }], DEFAULT_FEE.amount, gasLimit, "", ""), // need to fix pubkey and sequence types
       signatures: [fromBase64(signature)],
     });
 
