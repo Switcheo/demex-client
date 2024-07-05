@@ -179,10 +179,9 @@ export class CarbonAPI {
 
   withdrawMsg(fromAddress: string, toAddress: string, denom: string, amount: string, feeAddress: string): EncodeObject {
 
-    // use defaults for StdFee
-    // TODO: get the right fee for MsgWithdraw
-    const feeAmount = DEFAULT_FEE.amount[0].amount
-    const feeDenom = DEFAULT_FEE.amount[0].denom
+    // fee for relayer to cover gas
+    const feeAmount = '0'
+    const feeDenom = 'swth'
 
     const value = MsgWithdraw.fromPartial({
       creator: fromAddress,
@@ -206,11 +205,11 @@ export class CarbonAPI {
     const { account_number, sequence } = await this.getAccountInfo(from)
 
     const fee = {
-      amount: {
+      amount: [{
         amount: '0',
         denom: 'swth',
-      },
-      gas: '0',
+      }],
+      gas: DEFAULT_FEE.gas, // '10000000'
     }
     return {
       msg0: msg, // hardcoded as only 1 withdraw msg
@@ -225,7 +224,7 @@ export class CarbonAPI {
   // implement getTxRawBinary
   async getTxRawBinary(msg: EncodeObject, signature: string, from: string,  memo: string) {
 
-    const { pub_key, sequence } = await this.getAccountInfo(from) // bad bc fetches twice
+    const { pub_key, sequence } = await this.getAccountInfo(from) // bad to fetch twice
 
     const pubkey = encodePubkey({
       type: pub_key['@type'],
@@ -239,13 +238,16 @@ export class CarbonAPI {
         msg
       ],
   });
-
+    const feeAmount = [{
+      amount: '0',
+      denom: 'swth'
+    }] // list of coins with only 1 element
     const gasLimit = Number(DEFAULT_FEE.gas)
 
     // get TxRaw fromPartial
     const txRaw = TxRaw.fromPartial({
       bodyBytes: TxBody.encode(txBody).finish(),
-      authInfoBytes: makeAuthInfoBytes([{ pubkey, sequence: sequenceNumber }], DEFAULT_FEE.amount, gasLimit, "", ""), // no feeGranter & feePayer
+      authInfoBytes: makeAuthInfoBytes([{ pubkey, sequence: sequenceNumber }], feeAmount, gasLimit, "", ""), // no feeGranter & feePayer
       signatures: [fromBase64(signature)],
     });
 
