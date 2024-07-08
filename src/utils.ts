@@ -1,5 +1,14 @@
 import BigNumber from 'bignumber.js'
-import { Fill, MarketParams, Order, Position, Trade, UserFill } from './types'
+import {
+  Fill,
+  MarketParams,
+  Order,
+  PerpMarketParams,
+  Position,
+  Trade,
+  UserFill,
+} from './types'
+import { TxTypes } from 'carbon-js-sdk/lib/codec'
 
 export function sleep(interval: number = 1000) {
   return new Promise(resolve => {
@@ -7,7 +16,10 @@ export function sleep(interval: number = 1000) {
   })
 }
 
-export function toHumanPrice(price: string, params: MarketParams): number {
+export function toHumanPrice(
+  price: string,
+  params: MarketParams | PerpMarketParams
+): number {
   return new BigNumber(price)
     .shiftedBy(params.basePrecision - params.quotePrecision)
     .toNumber()
@@ -117,3 +129,76 @@ export function snakeToCamel(obj: any): any {
     return acc
   }, {})
 }
+
+export const AuthorizedSignlessMsgs = [
+  // alliance
+  TxTypes.MsgAllianceDelegate,
+  TxTypes.MsgAllianceUndelegate,
+  TxTypes.MsgAllianceRedelegate,
+  TxTypes.MsgAllianceClaimDelegationRewards,
+  TxTypes.MsgWithdrawDelegatorReward,
+
+  // cdp
+  TxTypes.MsgSupplyAsset,
+  TxTypes.MsgWithdrawAsset,
+  TxTypes.MsgLockCollateral,
+  TxTypes.MsgUnlockCollateral,
+  TxTypes.MsgBorrowAsset,
+  TxTypes.MsgSupplyAssetAndLockCollateral,
+  TxTypes.MsgUnlockCollateralAndWithdrawAsset,
+  TxTypes.MsgLiquidateCollateral,
+  TxTypes.MsgLiquidateCollateralWithCdpTokens,
+  TxTypes.MsgLiquidateCollateralWithCollateral,
+  TxTypes.MsgLiquidateCollateralWithStablecoin,
+  TxTypes.MsgRepayAsset,
+  TxTypes.MsgRepayAssetWithCdpTokens,
+  TxTypes.MsgRepayAssetWithCollateral,
+  TxTypes.MsgMintStablecoin,
+  TxTypes.MsgReturnStablecoin,
+  TxTypes.MsgClaimRewards,
+  TxTypes.MsgSetAccountEMode,
+  TxTypes.MsgRemoveAccountEMode,
+
+  // coin
+  TxTypes.MsgDepositToGroup,
+  TxTypes.MsgWithdrawFromGroup,
+  TxTypes.MsgCreateToken,
+
+  // leverages
+  TxTypes.MsgSetLeverage,
+
+  // liquiditypool
+  TxTypes.MsgCreatePool,
+  TxTypes.MsgCreatePoolWithLiquidity,
+  TxTypes.MsgAddLiquidity,
+  TxTypes.MsgRemoveLiquidity,
+  TxTypes.MsgStakePoolToken,
+  TxTypes.MsgUnstakePoolToken,
+  TxTypes.MsgClaimPoolRewards,
+
+  // order
+  TxTypes.MsgCreateOrder,
+  TxTypes.MsgCancelOrder,
+  TxTypes.MsgEditOrder,
+  TxTypes.MsgCancelAll,
+
+  // perpspool
+  TxTypes.MsgDepositToPool,
+  TxTypes.MsgWithdrawFromPool,
+
+  // position
+  TxTypes.MsgSetMargin,
+
+  // profile
+  TxTypes.MsgUpdateProfile,
+
+  // staking
+  TxTypes.MsgDelegate,
+  TxTypes.MsgUndelegate,
+  TxTypes.MsgBeginRedelegate,
+
+  // subaccount
+  TxTypes.MsgCreateSubAccount,
+  TxTypes.MsgActivateSubAccount,
+  TxTypes.MsgRemoveSubAccount,
+]

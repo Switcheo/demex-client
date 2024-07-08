@@ -20,6 +20,9 @@ export interface Duration {
   nanos: number
 }
 
+export interface TokensInfo {
+  [id: string]: Token
+}
 export interface Token {
   id: string
   creator: string
@@ -279,4 +282,10 @@ export type MappedAddress = string
 
 export interface ClientOpts extends CarbonSDKInitOpts {
   enablePolling?: boolean
+}
+
+export interface GrantAccountParams {
+  granter: string
+  grantee: string
+  expiry: Date
 }

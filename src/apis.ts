@@ -5,12 +5,19 @@ import BigNumber from 'bignumber.js'
 import {
   AccountInfoResponse,
   MappedAddress,
+  GrantAccountParams,
   MarketStats,
   PerpMarketParams,
   Position,
+  TokensInfo,
   WalletBalance,
 } from './types'
-import { humanizePosition } from './utils'
+import {
+  AuthorizedSignlessMsgs,
+  humanizePosition,
+  toHumanPrice,
+  toHumanQuantity,
+} from './utils'
 import { MsgSetLeverage } from 'carbon-js-sdk/lib/codec/Switcheo/carbon/leverage/tx'
 import { MsgWithdraw } from 'carbon-js-sdk/lib/codec/Switcheo/carbon/coin/tx'
 import { CarbonSDK, CarbonTx, CarbonWallet } from 'carbon-js-sdk'
@@ -18,30 +25,35 @@ import { BaseAccount } from 'carbon-js-sdk/lib/codec/cosmos/auth/v1beta1/auth'
 import { toBase64, toHex, fromBase64 } from '@cosmjs/encoding'
 import { EncodeObject, makeAuthInfoBytes, encodePubkey } from '@cosmjs/proto-signing'
 import { DEFAULT_FEE } from 'carbon-js-sdk/lib/constant'
-import { TxBody, TxRaw } from 'carbon-js-sdk/lib/codec/cosmos/tx/v1beta1/tx' 
+import { TxBody, TxRaw } from 'carbon-js-sdk/lib/codec/cosmos/tx/v1beta1/tx'
 import { parseBN } from 'carbon-js-sdk/lib/util/number'
+import { MsgGrant } from 'carbon-js-sdk/lib/codec/cosmos/authz/v1beta1/tx'
+import { MsgGrantAllowance } from 'carbon-js-sdk/lib/codec/cosmos/feegrant/v1beta1/tx'
+import { GenericAuthorization } from 'carbon-js-sdk/lib/codec/cosmos/authz/v1beta1/authz'
+import { GrantTypes } from 'carbon-js-sdk/lib/provider/amino/types/grant'
+import {
+  AllowedMsgAllowance,
+  BasicAllowance,
+} from 'carbon-js-sdk/lib/codec/cosmos/feegrant/v1beta1/feegrant'
 
 export class CarbonAPI {
-  async getTokens() {
+  async getTokensInfo(): Promise<TokensInfo> {
     const tokens = {}
     const url = `https://api.carbon.network/carbon/coin/v1/tokens?pagination.limit=1500`
     const res = (await axios.get(url)).data.tokens
 
     for (const token of res) {
       const tokenInfo = mapKeys(token, (v, k) => camelCase(k))
+      tokenInfo.decimals = parseInt(tokenInfo.decimals)
+      tokenInfo.bridgeId = parseInt(tokenInfo.bridgeId)
+      tokenInfo.chainId = parseInt(tokenInfo.chainId)
+      tokenInfo.createdBlockHeight = parseInt(tokenInfo.createdBlockHeight)
       tokens[tokenInfo.denom] = tokenInfo
     }
     return tokens
   }
 
-  async getUserLeverage(address, market): Promise<number> {
-    market = market.replace('/', '%252F')
-    const url = `https://api.carbon.network/carbon/leverage/v1/leverages/${address}/${market}`
-    const res = parseFloat((await axios.get(url)).data.market_leverage.leverage)
-    return res
-  }
-
-  async getMarketsInfo(): Promise<PerpMarketParams[]> {
+  async getMarketsInfo(tokensInfo: TokensInfo): Promise<PerpMarketParams[]> {
     const url = `https://api.carbon.network/carbon/market/v1/markets?pagination.limit=800`
     const res = (await axios.get(url)).data.markets
     const marketsList = []
@@ -58,9 +70,7 @@ export class CarbonAPI {
           ...market,
           basePrecision,
           quotePrecision,
-          tickSize: new BigNumber(market.tickSize)
-            .shiftedBy(basePrecision - quotePrecision)
-            .toNumber(),
+          tickSize: toHumanPrice(market.tickSize, market),
           lotSize: new BigNumber(market.lotSize).shiftedBy(-basePrecision).toNumber(),
           minQuantity: new BigNumber(market.minQuantity)
             .shiftedBy(-basePrecision)
@@ -79,15 +89,27 @@ export class CarbonAPI {
             .toNumber(),
           createdBlockHeight: parseInt(market.createdBlockHeight),
         }
-        const key = marketInfo.displayName.split('_')[0]
+        const baseTokenId = market.base
+        const key = tokensInfo[baseTokenId].symbol
+        // let key = marketInfo.displayName.split('_')[0]
+        // if (key === 'BTC') key = 'WBTC'
+        // if (key === 'NEO') key = 'bNEO'
         marketsList.push({ ...marketInfo, market: key })
       }
     }
     return marketsList
   }
 
+  async getUserLeverage(address, market): Promise<number> {
+    market = market.replace('/', '%252F')
+    const url = `https://api.carbon.network/carbon/leverage/v1/leverages/${address}/${market}`
+    const res = parseFloat((await axios.get(url)).data.market_leverage.leverage)
+    return res
+  }
+
   async getPositions(address: string): Promise<Position[]> {
-    const marketsParams = await this.getMarketsInfo()
+    const tokensInfo = await this.getTokensInfo()
+    const marketsParams = await this.getMarketsInfo(tokensInfo)
     const positions: Position[] = []
     const url = `https://api.carbon.network/carbon/position/v1/positions?status=open&address=${address}`
     const res = (await axios.get(url)).data.positions
@@ -152,6 +174,31 @@ export class CarbonAPI {
     return balances
   }
 
+  async getOrderbook(market: string, marketParam: PerpMarketParams): Promise<any> {
+    const url = `https://api.carbon.network/carbon/book/v1/books/${market.replace(
+      '/',
+      '%252F'
+    )}`
+    const res = (await axios.get(url)).data.book
+
+    const { bids, asks } = res
+    const book = {
+      bids: bids.map(b => {
+        return {
+          price: toHumanPrice(b.price, marketParam),
+          quantity: toHumanQuantity(b.total_quantity, marketParam.basePrecision),
+        }
+      }),
+      asks: asks.map(a => {
+        return {
+          price: toHumanPrice(a.price, marketParam),
+          quantity: toHumanQuantity(a.total_quantity, marketParam.basePrecision),
+        }
+      }),
+    }
+    return book
+  }
+
   async getAccountInfo(address: string): Promise<AccountInfoResponse> {
     const url = `https://api.carbon.network/cosmos/auth/v1beta1/account_info/${address}`
     const res = (await axios.get(url)).data.info
@@ -177,8 +224,13 @@ export class CarbonAPI {
     return msg
   }
 
-  withdrawMsg(fromAddress: string, toAddress: string, denom: string, amount: string, feeAddress: string): EncodeObject {
-
+  withdrawMsg(
+    fromAddress: string,
+    toAddress: string,
+    denom: string,
+    amount: string,
+    feeAddress: string
+  ): EncodeObject {
     // fee for relayer to cover gas
     const feeAmount = '0'
     const feeDenom = 'swth'
@@ -188,27 +240,34 @@ export class CarbonAPI {
       toAddress,
       denom,
       amount,
-      feeAmount, 
+      feeAmount,
       feeAddress,
       feeDenom,
-    });
+    })
 
     const msg = {
       typeUrl: CarbonTx.Types.MsgWithdraw,
-      value
+      value,
     }
     return msg
   }
 
   // combine msg with fee, evmChainId, memo, accountNumber, sequence
-  async getEip712Message(msg: EncodeObject, from: string, chain_id: string, memo: string) {
+  async getEip712Message(
+    msg: EncodeObject,
+    from: string,
+    chain_id: string,
+    memo: string
+  ) {
     const { account_number, sequence } = await this.getAccountInfo(from)
 
     const fee = {
-      amount: [{
-        amount: '0',
-        denom: 'swth',
-      }],
+      amount: [
+        {
+          amount: '0',
+          denom: 'swth',
+        },
+      ],
       gas: DEFAULT_FEE.gas, // '10000000'
     }
     return {
@@ -217,43 +276,48 @@ export class CarbonAPI {
       chain_id,
       memo,
       account_number,
-      sequence
+      sequence,
     }
   }
 
   // implement getTxRawBinary
-  async getTxRawBinary(msg: EncodeObject, signature: string, from: string,  memo: string) {
-
+  async getTxRawBinary(msg: EncodeObject, signature: string, from: string, memo: string) {
     const { pub_key, sequence } = await this.getAccountInfo(from) // bad to fetch twice
 
     const pubkey = encodePubkey({
       type: pub_key['@type'],
-      value: pub_key.key
+      value: pub_key.key,
     })
 
     const sequenceNumber = parseInt(sequence)
 
     const txBody: TxBody = TxBody.fromPartial({
-      messages: [
-        msg
-      ],
-  });
-    const feeAmount = [{
-      amount: '0',
-      denom: 'swth'
-    }] // list of coins with only 1 element
+      messages: [msg],
+    })
+    const feeAmount = [
+      {
+        amount: '0',
+        denom: 'swth',
+      },
+    ] // list of coins with only 1 element
     const gasLimit = Number(DEFAULT_FEE.gas)
 
     // get TxRaw fromPartial
     const txRaw = TxRaw.fromPartial({
       bodyBytes: TxBody.encode(txBody).finish(),
-      authInfoBytes: makeAuthInfoBytes([{ pubkey, sequence: sequenceNumber }], feeAmount, gasLimit, "", ""), // no feeGranter & feePayer
+      authInfoBytes: makeAuthInfoBytes(
+        [{ pubkey, sequence: sequenceNumber }],
+        feeAmount,
+        gasLimit,
+        '',
+        ''
+      ), // no feeGranter & feePayer
       signatures: [fromBase64(signature)],
-    });
+    })
 
     // convert TxRaw to binary to base64
-    const binary = TxRaw.encode(txRaw).finish();
-    const payload = Buffer.from(binary).toString("base64");
+    const binary = TxRaw.encode(txRaw).finish()
+    const payload = Buffer.from(binary).toString('base64')
 
     return payload
   }
@@ -272,5 +336,76 @@ export class CarbonAPI {
       {}
     )
     return toBase64(signedTx.signatures[0])
+  }
+
+  async broadcastTx(hex: string) {
+    const TM_URL = 'https://tm-api.carbon.network/'
+    const tx = await axios.post(
+      TM_URL,
+      JSON.stringify({
+        jsonrpc: '2.0',
+        id: Date.now(),
+        method: 'broadcast_tx_sync',
+        params: {
+          tx: hex,
+        },
+      }),
+      { headers: { 'Content-Type': 'application/json' } }
+    )
+    return tx
+  }
+
+  async grantAccount(params: GrantAccountParams) {
+    const encodedGrantMsgs = AuthorizedSignlessMsgs.map(msg => {
+      const grantMsg = MsgGrant.fromPartial({
+        granter: params.granter,
+        grantee: params.grantee,
+        grant: {
+          authorization: {
+            typeUrl: GrantTypes.GenericAuthorization,
+            value: GenericAuthorization.encode(
+              GenericAuthorization.fromPartial({
+                msg,
+              })
+            ).finish(),
+          },
+          expiration: params.expiry,
+        },
+      })
+      return {
+        typeUrl: CarbonTx.Types.MsgGrant,
+        value: grantMsg,
+      }
+    })
+
+    let messages = encodedGrantMsgs
+
+    const encodedAllowanceMsg = [
+      {
+        typeUrl: CarbonTx.Types.MsgGrantAllowance,
+        value: MsgGrantAllowance.fromPartial({
+          granter: params.granter,
+          grantee: params.grantee,
+          allowance: {
+            typeUrl: GrantTypes.AllowedMsgAllowance,
+            value: AllowedMsgAllowance.encode(
+              AllowedMsgAllowance.fromPartial({
+                allowance: {
+                  typeUrl: GrantTypes.BasicAllowance,
+                  value: BasicAllowance.encode(
+                    BasicAllowance.fromPartial({
+                      expiration: params.expiry,
+                    })
+                  ).finish(),
+                },
+                allowedMessages: [CarbonTx.Types.MsgExec],
+              })
+            ).finish(),
+          },
+        }),
+      },
+    ]
+    messages.concat(encodedAllowanceMsg)
+    return messages
   }
 }

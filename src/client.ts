@@ -2,6 +2,7 @@ import axios from 'axios'
 import BigNumber from 'bignumber.js'
 import { AddressUtils, CarbonSDK, CarbonSDKInitOpts, CarbonTx } from 'carbon-js-sdk'
 import { MsgCreateOrder } from 'carbon-js-sdk/lib/codec/Switcheo/carbon/order/tx'
+
 import dayjs from 'dayjs'
 import Long from 'long'
 import camelCase from 'lodash.camelcase'
@@ -45,10 +46,15 @@ import {
   humanizePosition,
   humanizeFill,
   humanizeUserFill,
+  AuthorizedSignlessMsgs,
 } from './utils'
 import { ethers } from 'ethers'
 import { SWTHAddress } from 'carbon-js-sdk/lib/util/address'
 import { CarbonAPI } from './apis'
+import {
+  AllowedMsgAllowance,
+  BasicAllowance,
+} from 'carbon-js-sdk/lib/codec/cosmos/feegrant/v1beta1/feegrant'
 
 export class Client {
   public sdk: CarbonSDK | null
@@ -557,7 +563,8 @@ export class Client {
   }
   /* Gets all markets parameters */
   async updateMarketsInfo() {
-    const res = await this.api.getMarketsInfo()
+    const tokensInfo = await this.api.getTokensInfo()
+    const res = await this.api.getMarketsInfo(tokensInfo)
 
     const markets = []
     for (const m of res) {
@@ -590,13 +597,13 @@ export class Client {
 
   async updateMarketsStats(): Promise<void> {
     try {
-      const now = new Date()
+      const now = dayjs()
       const url = 'https://api.carbon.network/carbon/marketstats/v1/stats'
       const { marketstats } = (await axios.get(url)).data
       for (const m of marketstats) {
         if (m.market_type === 'futures') {
           const info = this.marketsInfo[m.market_id]
-          if (info.isActive && info.expiryTime < now) {
+          if (info && info.isActive && dayjs(info.expiryTime) < now) {
             const { basePrecision, quotePrecision } = info
             const markPrice = new BigNumber(m.mark_price).shiftedBy(
               basePrecision - quotePrecision
