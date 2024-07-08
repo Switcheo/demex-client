@@ -597,13 +597,13 @@ export class Client {
 
   async updateMarketsStats(): Promise<void> {
     try {
-      const now = new Date()
+      const now = dayjs()
       const url = 'https://api.carbon.network/carbon/marketstats/v1/stats'
       const { marketstats } = (await axios.get(url)).data
       for (const m of marketstats) {
         if (m.market_type === 'futures') {
           const info = this.marketsInfo[m.market_id]
-          if (info.isActive && info.expiryTime < now) {
+          if (info && info.isActive && dayjs(info.expiryTime) < now) {
             const { basePrecision, quotePrecision } = info
             const markPrice = new BigNumber(m.mark_price).shiftedBy(
               basePrecision - quotePrecision
