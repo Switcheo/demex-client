@@ -91,6 +91,7 @@ export class CarbonAPI {
           createdBlockHeight: parseInt(market.createdBlockHeight),
         }
         const baseTokenId = market.base
+        // console.log(baseTokenId, tokensInfo[baseTokenId])
         const key = tokensInfo[baseTokenId].symbol
         // let key = marketInfo.displayName.split('_')[0]
         // if (key === 'BTC') key = 'WBTC'
