@@ -25,6 +25,7 @@ import { CarbonSDK, CarbonTx, CarbonWallet } from 'carbon-js-sdk'
 import { BaseAccount } from 'carbon-js-sdk/lib/codec/cosmos/auth/v1beta1/auth'
 import { toBase64, toHex, fromBase64 } from '@cosmjs/encoding'
 import { EncodeObject, makeAuthInfoBytes, encodePubkey } from '@cosmjs/proto-signing'
+import { encodeSecp256k1Pubkey } from "@cosmjs/amino";
 import { DEFAULT_FEE } from 'carbon-js-sdk/lib/constant'
 import { TxBody, TxRaw } from 'carbon-js-sdk/lib/codec/cosmos/tx/v1beta1/tx'
 import { parseBN } from 'carbon-js-sdk/lib/util/number'
@@ -36,6 +37,7 @@ import {
   AllowedMsgAllowance,
   BasicAllowance,
 } from 'carbon-js-sdk/lib/codec/cosmos/feegrant/v1beta1/feegrant'
+import { stripHexPrefix } from 'carbon-js-sdk/lib/util/generic'
 
 export class CarbonAPI {
   async getTokensInfo(): Promise<Token[]> {
@@ -243,7 +245,7 @@ export class CarbonAPI {
 
     const value = MsgWithdraw.fromPartial({
       creator: fromAddress,
-      toAddress,
+      toAddress: stripHexPrefix(toAddress),
       denom,
       amount,
       feeAmount,
@@ -290,11 +292,7 @@ export class CarbonAPI {
   async getTxRawBinary(msg: EncodeObject, signature: string, from: string, memo: string) {
     const { pub_key, sequence } = await this.getAccountInfo(from) // bad to fetch twice
 
-    const pubkey = encodePubkey({
-      type: pub_key['@type'],
-      value: pub_key.key,
-    })
-
+    const pubkey = encodePubkey(encodeSecp256k1Pubkey(fromBase64(pub_key.key)))
     const sequenceNumber = parseInt(sequence)
 
     const txBody: TxBody = TxBody.fromPartial({
