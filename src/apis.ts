@@ -11,6 +11,7 @@ import {
   Position,
   TokensInfo,
   WalletBalance,
+  Token,
 } from './types'
 import {
   AuthorizedSignlessMsgs,
@@ -37,8 +38,8 @@ import {
 } from 'carbon-js-sdk/lib/codec/cosmos/feegrant/v1beta1/feegrant'
 
 export class CarbonAPI {
-  async getTokensInfo(): Promise<TokensInfo> {
-    const tokens = {}
+  async getTokensInfo(): Promise<Token[]> {
+    const tokens = []
     const url = `https://api.carbon.network/carbon/coin/v1/tokens?pagination.limit=1500`
     const res = (await axios.get(url)).data.tokens
 
@@ -48,7 +49,7 @@ export class CarbonAPI {
       tokenInfo.bridgeId = parseInt(tokenInfo.bridgeId)
       tokenInfo.chainId = parseInt(tokenInfo.chainId)
       tokenInfo.createdBlockHeight = parseInt(tokenInfo.createdBlockHeight)
-      tokens[tokenInfo.denom] = tokenInfo
+      tokens.push(tokenInfo)
     }
     return tokens
   }
@@ -109,7 +110,11 @@ export class CarbonAPI {
 
   async getPositions(address: string): Promise<Position[]> {
     const tokensInfo = await this.getTokensInfo()
-    const marketsParams = await this.getMarketsInfo(tokensInfo)
+    const tokensMap = {}
+    for (const token of tokensInfo) {
+      tokensMap[token.denom] = token
+    }
+    const marketsParams = await this.getMarketsInfo(tokensMap)
     const positions: Position[] = []
     const url = `https://api.carbon.network/carbon/position/v1/positions?status=open&address=${address}`
     const res = (await axios.get(url)).data.positions

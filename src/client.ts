@@ -564,7 +564,11 @@ export class Client {
   /* Gets all markets parameters */
   async updateMarketsInfo() {
     const tokensInfo = await this.api.getTokensInfo()
-    const res = await this.api.getMarketsInfo(tokensInfo)
+    const tokensMap = {}
+    for (const t of tokensInfo) {
+      tokensMap[t.denom] = t
+    }
+    const res = await this.api.getMarketsInfo(tokensMap)
 
     const markets = []
     for (const m of res) {
