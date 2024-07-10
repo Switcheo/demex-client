@@ -23,9 +23,10 @@ import { MsgSetLeverage } from 'carbon-js-sdk/lib/codec/Switcheo/carbon/leverage
 import { MsgWithdraw } from 'carbon-js-sdk/lib/codec/Switcheo/carbon/coin/tx'
 import { CarbonSDK, CarbonTx, CarbonWallet } from 'carbon-js-sdk'
 import { BaseAccount } from 'carbon-js-sdk/lib/codec/cosmos/auth/v1beta1/auth'
-import { toBase64, toHex, fromBase64 } from '@cosmjs/encoding'
+import { toBase64, fromHex, fromBase64 } from '@cosmjs/encoding'
 import { EncodeObject, makeAuthInfoBytes, encodePubkey } from '@cosmjs/proto-signing'
 import { encodeSecp256k1Pubkey } from "@cosmjs/amino";
+import { Int53 } from '@cosmjs/math'
 import { DEFAULT_FEE } from 'carbon-js-sdk/lib/constant'
 import { TxBody, TxRaw } from 'carbon-js-sdk/lib/codec/cosmos/tx/v1beta1/tx'
 import { parseBN } from 'carbon-js-sdk/lib/util/number'
@@ -238,7 +239,7 @@ export class CarbonAPI {
     denom: string,
     amount: string,
     feeAddress: string
-  ): EncodeObject {
+  ) {
     // fee for relayer to cover gas
     const feeAmount = '0'
     const feeDenom = 'swth'
@@ -254,7 +255,8 @@ export class CarbonAPI {
     })
 
     const msg = {
-      typeUrl: CarbonTx.Types.MsgWithdraw,
+      // typeUrl: CarbonTx.Types.MsgWithdraw,
+      type: "carbon/MsgWithdraw",
       value,
     }
     return msg
@@ -262,7 +264,8 @@ export class CarbonAPI {
 
   // combine msg with fee, evmChainId, memo, accountNumber, sequence
   async getEip712Message(
-    msg: EncodeObject,
+    // msg: EncodeObject,
+    msg: any,
     from: string,
     chain_id: string,
     memo: string
@@ -289,14 +292,19 @@ export class CarbonAPI {
   }
 
   // implement getTxRawBinary
-  async getTxRawBinary(msg: EncodeObject, signature: string, from: string, memo: string) {
+  async getTxRawBinary(msg: any, signature: string, from: string, memo: string) {
     const { pub_key, sequence } = await this.getAccountInfo(from) // bad to fetch twice
 
     const pubkey = encodePubkey(encodeSecp256k1Pubkey(fromBase64(pub_key.key)))
     const sequenceNumber = parseInt(sequence)
 
+    const msgValue: MsgWithdraw = msg.value
+
     const txBody: TxBody = TxBody.fromPartial({
-      messages: [msg],
+      messages: [{ 
+        typeUrl: CarbonTx.Types.MsgWithdraw,
+        value: MsgWithdraw.encode(msgValue).finish()
+      }]
     })
     const feeAmount = [
       {
@@ -304,8 +312,10 @@ export class CarbonAPI {
         denom: 'swth',
       },
     ] // list of coins with only 1 element
-    const gasLimit = Number(DEFAULT_FEE.gas)
-
+    const gasLimit = Int53.fromString(DEFAULT_FEE.gas).toNumber()
+    
+    // console.log('signature', signature)
+    // console.log('signature sliced', signature.slice(2))
     // get TxRaw fromPartial
     const txRaw = TxRaw.fromPartial({
       bodyBytes: TxBody.encode(txBody).finish(),
@@ -313,10 +323,10 @@ export class CarbonAPI {
         [{ pubkey, sequence: sequenceNumber }],
         feeAmount,
         gasLimit,
-        '',
-        ''
+        undefined,
+        undefined
       ), // no feeGranter & feePayer
-      signatures: [fromBase64(signature)],
+      signatures: [fromHex(signature.slice(2))],
     })
 
     // convert TxRaw to binary to base64
