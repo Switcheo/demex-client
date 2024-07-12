@@ -25,7 +25,7 @@ import { CarbonSDK, CarbonTx, CarbonWallet } from 'carbon-js-sdk'
 import { BaseAccount } from 'carbon-js-sdk/lib/codec/cosmos/auth/v1beta1/auth'
 import { toBase64, fromHex, fromBase64 } from '@cosmjs/encoding'
 import { EncodeObject, makeAuthInfoBytes, encodePubkey } from '@cosmjs/proto-signing'
-import { encodeSecp256k1Pubkey } from "@cosmjs/amino";
+import { encodeAnyEthSecp256k1PubKey } from "carbon-js-sdk/lib/util/ethermint";
 import { Int53 } from '@cosmjs/math'
 import { DEFAULT_FEE } from 'carbon-js-sdk/lib/constant'
 import { TxBody, TxRaw } from 'carbon-js-sdk/lib/codec/cosmos/tx/v1beta1/tx'
@@ -39,6 +39,8 @@ import {
   BasicAllowance,
 } from 'carbon-js-sdk/lib/codec/cosmos/feegrant/v1beta1/feegrant'
 import { stripHexPrefix } from 'carbon-js-sdk/lib/util/generic'
+import { ExtensionOptionsWeb3Tx } from 'carbon-js-sdk/lib/codec/ethermint/types/v1/web3'
+import { SignMode } from 'carbon-js-sdk/lib/codec/cosmos/tx/signing/v1beta1/signing'
 
 export class CarbonAPI {
   async getTokensInfo(): Promise<Token[]> {
@@ -294,8 +296,7 @@ export class CarbonAPI {
   // implement getTxRawBinary
   async getTxRawBinary(msg: any, signature: string, from: string, memo: string) {
     const { pub_key, sequence } = await this.getAccountInfo(from) // bad to fetch twice
-
-    const pubkey = encodePubkey(encodeSecp256k1Pubkey(fromBase64(pub_key.key)))
+    const pubkey = encodeAnyEthSecp256k1PubKey(fromBase64(pub_key.key))
     const sequenceNumber = parseInt(sequence)
 
     const msgValue: MsgWithdraw = msg.value
@@ -304,7 +305,17 @@ export class CarbonAPI {
       messages: [{ 
         typeUrl: CarbonTx.Types.MsgWithdraw,
         value: MsgWithdraw.encode(msgValue).finish()
-      }]
+      }],
+      extensionOptions: [
+        {
+          typeUrl: "/ethermint.types.v1.ExtensionOptionsWeb3Tx",
+          value: ExtensionOptionsWeb3Tx.encode(ExtensionOptionsWeb3Tx.fromPartial({
+            typedDataChainId: 9790,
+            feePayer: from,
+            feePayerSig: fromHex(signature.slice(2)),
+          })).finish()
+        }
+      ],
     })
     const feeAmount = [
       {
@@ -314,8 +325,6 @@ export class CarbonAPI {
     ] // list of coins with only 1 element
     const gasLimit = Int53.fromString(DEFAULT_FEE.gas).toNumber()
     
-    // console.log('signature', signature)
-    // console.log('signature sliced', signature.slice(2))
     // get TxRaw fromPartial
     const txRaw = TxRaw.fromPartial({
       bodyBytes: TxBody.encode(txBody).finish(),
@@ -324,9 +333,10 @@ export class CarbonAPI {
         feeAmount,
         gasLimit,
         undefined,
-        undefined
-      ), // no feeGranter & feePayer
-      signatures: [fromHex(signature.slice(2))],
+        from,
+        SignMode.SIGN_MODE_LEGACY_AMINO_JSON
+      ), // no feeGranter
+      signatures: [new Uint8Array()],
     })
 
     // convert TxRaw to binary to base64
