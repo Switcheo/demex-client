@@ -2,6 +2,7 @@ import camelCase from 'lodash.camelcase'
 import mapKeys from 'lodash.mapkeys'
 import axios from 'axios'
 import BigNumber from 'bignumber.js'
+
 import {
   AccountInfoResponse,
   MappedAddress,
@@ -15,6 +16,9 @@ import {
 } from './types'
 import {
   AuthorizedSignlessMsgs,
+  camelCaseKeys,
+  constructEIP712Tx,
+  convertKeysToSnakeCase,
   humanizePosition,
   toHumanPrice,
   toHumanQuantity,
@@ -24,8 +28,17 @@ import { MsgWithdraw } from 'carbon-js-sdk/lib/codec/Switcheo/carbon/coin/tx'
 import { CarbonSDK, CarbonTx, CarbonWallet } from 'carbon-js-sdk'
 import { BaseAccount } from 'carbon-js-sdk/lib/codec/cosmos/auth/v1beta1/auth'
 import { toBase64, fromHex, fromBase64 } from '@cosmjs/encoding'
-import { EncodeObject, makeAuthInfoBytes, encodePubkey } from '@cosmjs/proto-signing'
-import { encodeAnyEthSecp256k1PubKey } from "carbon-js-sdk/lib/util/ethermint";
+import {
+  EncodeObject,
+  makeAuthInfoBytes,
+  encodePubkey,
+  TxBodyEncodeObject,
+  Registry,
+} from '@cosmjs/proto-signing'
+import {
+  encodeAnyEthSecp256k1PubKey,
+  parseChainId,
+} from 'carbon-js-sdk/lib/util/ethermint'
 import { Int53 } from '@cosmjs/math'
 import { DEFAULT_FEE } from 'carbon-js-sdk/lib/constant'
 import { TxBody, TxRaw } from 'carbon-js-sdk/lib/codec/cosmos/tx/v1beta1/tx'
@@ -41,10 +54,14 @@ import {
 import { stripHexPrefix } from 'carbon-js-sdk/lib/util/generic'
 import { ExtensionOptionsWeb3Tx } from 'carbon-js-sdk/lib/codec/ethermint/types/v1/web3'
 import { SignMode } from 'carbon-js-sdk/lib/codec/cosmos/tx/signing/v1beta1/signing'
+import { makeSignDoc } from '@cosmjs/amino/build'
+import { registry as TypesRegistry } from 'carbon-js-sdk/lib/codec'
+
+const registry: Registry = TypesRegistry as Registry
 
 export class CarbonAPI {
-  async getTokensInfo(): Promise<Token[]> {
-    const tokens = []
+  async getTokensInfo(): Promise<TokensInfo> {
+    const tokens = {}
     const url = `https://api.carbon.network/carbon/coin/v1/tokens?pagination.limit=1500`
     const res = (await axios.get(url)).data.tokens
 
@@ -54,7 +71,7 @@ export class CarbonAPI {
       tokenInfo.bridgeId = parseInt(tokenInfo.bridgeId)
       tokenInfo.chainId = parseInt(tokenInfo.chainId)
       tokenInfo.createdBlockHeight = parseInt(tokenInfo.createdBlockHeight)
-      tokens.push(tokenInfo)
+      tokens[tokenInfo.denom] = tokenInfo
     }
     return tokens
   }
@@ -116,11 +133,8 @@ export class CarbonAPI {
 
   async getPositions(address: string): Promise<Position[]> {
     const tokensInfo = await this.getTokensInfo()
-    const tokensMap = {}
-    for (const token of tokensInfo) {
-      tokensMap[token.denom] = token
-    }
-    const marketsParams = await this.getMarketsInfo(tokensMap)
+
+    const marketsParams = await this.getMarketsInfo(tokensInfo)
     const positions: Position[] = []
     const url = `https://api.carbon.network/carbon/position/v1/positions?status=open&address=${address}`
     const res = (await axios.get(url)).data.positions
@@ -258,7 +272,7 @@ export class CarbonAPI {
 
     const msg = {
       // typeUrl: CarbonTx.Types.MsgWithdraw,
-      type: "carbon/MsgWithdraw",
+      type: 'carbon/MsgWithdraw',
       value,
     }
     return msg
@@ -293,57 +307,138 @@ export class CarbonAPI {
     }
   }
 
+  async makeEIP712Tx(msg: any, typeUrl: string, from: string, memo: string) {
+    const { pub_key, sequence, account_number } = await this.getAccountInfo(from) // bad to fetch twice
+    const fee = {
+      // amount: [{ amount: '10000000', denom: 'swth' }],
+      amount: [{ amount: '10000000', denom: 'swth' }],
+      gas: '10000000',
+    }
+    const evmChainId = 'carbon_9790-1'
+    const snakeCaseMsg = convertKeysToSnakeCase(msg)
+    const stdSignDoc = makeSignDoc(
+      [snakeCaseMsg],
+      fee,
+      evmChainId,
+      memo,
+      account_number,
+      sequence
+    )
+    const eip712Tx = constructEIP712Tx(stdSignDoc, [typeUrl])
+    return { eip712Tx, stdSignDoc }
+  }
+
   // implement getTxRawBinary
-  async getTxRawBinary(msg: any, signature: string, from: string, memo: string) {
-    const { pub_key, sequence } = await this.getAccountInfo(from) // bad to fetch twice
+  async getTxRawBinary(signature: string, stdSignDoc: any, from: string, memo: string) {
+    const { pub_key, sequence, account_number } = await this.getAccountInfo(from) // bad to fetch twice
+
     const pubkey = encodeAnyEthSecp256k1PubKey(fromBase64(pub_key.key))
     const sequenceNumber = parseInt(sequence)
 
-    const msgValue: MsgWithdraw = msg.value
+    // const eip712Message = await this.makeEIP712Tx(msg, from, memo)
 
-    const txBody: TxBody = TxBody.fromPartial({
-      messages: [{ 
-        typeUrl: CarbonTx.Types.MsgWithdraw,
-        value: MsgWithdraw.encode(msgValue).finish()
-      }],
-      extensionOptions: [
-        {
-          typeUrl: "/ethermint.types.v1.ExtensionOptionsWeb3Tx",
-          value: ExtensionOptionsWeb3Tx.encode(ExtensionOptionsWeb3Tx.fromPartial({
-            typedDataChainId: 9790,
-            feePayer: from,
-            feePayerSig: fromHex(signature.slice(2)),
-          })).finish()
-        }
-      ],
-    })
-    const feeAmount = [
-      {
-        amount: '0',
-        denom: 'swth',
+    // const sig = await wallet.signTypedData(eip712Message)
+
+    const sigBz = Uint8Array.from(Buffer.from(signature.split('0x')[1], 'hex'))
+    // const publicKeyBase64 = Buffer.from(accountInfo.pubKey, 'hex').toString('base64')
+    const signedAmino = {
+      signed: stdSignDoc,
+      signature: {
+        pub_key: {
+          type: '/ethermint.crypto.v1.ethsecp256k1.PubKey',
+          value: pub_key,
+        },
+        // Remove recovery `v` from signature
+        signature: Buffer.from(sigBz.slice(0, -1)).toString('base64'),
       },
-    ] // list of coins with only 1 element
-    const gasLimit = Int53.fromString(DEFAULT_FEE.gas).toNumber()
-    
-    // get TxRaw fromPartial
-    const txRaw = TxRaw.fromPartial({
-      bodyBytes: TxBody.encode(txBody).finish(),
-      authInfoBytes: makeAuthInfoBytes(
-        [{ pubkey, sequence: sequenceNumber }],
-        feeAmount,
-        gasLimit,
-        undefined,
-        from,
-        SignMode.SIGN_MODE_LEGACY_AMINO_JSON
-      ), // no feeGranter
-      signatures: [new Uint8Array()],
+      // feePayer: accountInfo.swth,
+    }
+    const signedTxBody = {
+      messages: signedAmino.signed.msgs.map(msg => {
+        // camcelCase
+        const value = camelCaseKeys(msg.value)
+        return {
+          // typeUrl: '/Switcheo.carbon.leverage.MsgSetLeverage',
+          typeUrl: '/Switcheo.carbon.coin.MsgWithdraw',
+          // typeUrl: '/Switcheo.carbon.order.MsgCancelOrder',
+          value,
+        }
+      }),
+      memo: signedAmino.signed.memo,
+    }
+    const signedTxBodyEncodeObject: TxBodyEncodeObject = {
+      typeUrl: '/cosmos.tx.v1beta1.TxBody',
+      value: signedTxBody,
+    }
+
+    const signedTxBodyBytes = registry.encode(signedTxBodyEncodeObject)
+    const signedGasLimit = Int53.fromString(signedAmino.signed.fee.gas).toNumber()
+    const signedSequence = Int53.fromString(signedAmino.signed.sequence).toNumber()
+    const signedAuthInfoBytes = makeAuthInfoBytes(
+      [{ pubkey, sequence: signedSequence }],
+      signedAmino.signed.fee.amount,
+      signedGasLimit,
+      undefined,
+      undefined,
+      127
+    )
+    const rawTx = TxRaw.fromPartial({
+      bodyBytes: signedTxBodyBytes,
+      authInfoBytes: signedAuthInfoBytes,
+      signatures: [fromBase64(signedAmino.signature.signature)],
     })
+    const tx = CarbonWallet.TxRaw.encode(rawTx).finish()
+    return Buffer.from(tx).toString('base64')
 
-    // convert TxRaw to binary to base64
-    const binary = TxRaw.encode(txRaw).finish()
-    const payload = Buffer.from(binary).toString('base64')
+    // const msgValue: MsgWithdraw = msg.value
 
-    return payload
+    // const txBody: TxBody = TxBody.fromPartial({
+    //   messages: [
+    //     {
+    //       typeUrl: CarbonTx.Types.MsgWithdraw,
+    //       value: MsgWithdraw.encode(msgValue).finish(),
+    //     },
+    //   ],
+    //   extensionOptions: [
+    //     {
+    //       typeUrl: '/ethermint.types.v1.ExtensionOptionsWeb3Tx',
+    //       value: ExtensionOptionsWeb3Tx.encode(
+    //         ExtensionOptionsWeb3Tx.fromPartial({
+    //           typedDataChainId: 9790,
+    //           feePayer: from,
+    //           feePayerSig: fromHex(signature.slice(2)),
+    //         })
+    //       ).finish(),
+    //     },
+    //   ],
+    // })
+    // const feeAmount = [
+    //   {
+    //     amount: '0',
+    //     denom: 'swth',
+    //   },
+    // ] // list of coins with only 1 element
+    // const gasLimit = Int53.fromString(DEFAULT_FEE.gas).toNumber()
+
+    // // get TxRaw fromPartial
+    // const txRaw = TxRaw.fromPartial({
+    //   bodyBytes: TxBody.encode(txBody).finish(),
+    //   authInfoBytes: makeAuthInfoBytes(
+    //     [{ pubkey, sequence: sequenceNumber }],
+    //     feeAmount,
+    //     gasLimit,
+    //     undefined,
+    //     from,
+    //     SignMode.SIGN_MODE_LEGACY_AMINO_JSON
+    //   ), // no feeGranter
+    //   signatures: [new Uint8Array()],
+    // })
+
+    // // convert TxRaw to binary to base64
+    // const binary = TxRaw.encode(txRaw).finish()
+    // const payload = Buffer.from(binary).toString('base64')
+
+    // return payload
   }
 
   async signAndHex(sdk: CarbonSDK, msgs: EncodeObject[]): Promise<string> {

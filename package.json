@@ -16,6 +16,7 @@
     "carbon-js-sdk": "^0.10.5",
     "dayjs": "^1.11.10",
     "lodash.camelcase": "^4.3.0",
+    "lodash.capitalize": "^4.2.1",
     "lodash.mapkeys": "^4.6.0",
     "typescript": "^5.3.2"
   },

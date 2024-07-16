@@ -1,7 +1,8 @@
 import BigNumber from 'bignumber.js'
 import { CarbonSDKInitOpts } from 'carbon-js-sdk'
 import { ethers } from 'ethers'
-
+import { BigNumberish } from '@ethersproject/bignumber'
+import { BytesLike } from '@ethersproject/bytes'
 export interface Duration {
   /**
    * Signed seconds of the span of time. Must be from -315,576,000,000
@@ -288,4 +289,27 @@ export interface GrantAccountParams {
   granter: string
   grantee: string
   expiry: Date
+}
+
+export interface SimpleMap<T = unknown> {
+  [index: string]: T
+}
+export interface TypedDataField {
+  name: string
+  type: string
+}
+
+export interface TypedDataDomain {
+  name?: string
+  version?: string
+  chainId?: BigNumberish
+  verifyingContract?: string
+  salt?: BytesLike
+}
+
+export interface EIP712Tx {
+  readonly types: SimpleMap<TypedDataField[]>
+  readonly primaryType: string
+  readonly domain: TypedDataDomain
+  readonly message: any
 }
