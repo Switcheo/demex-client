@@ -329,18 +329,19 @@ export class CarbonAPI {
   }
 
   // implement getTxRawBinary
-  async getTxRawBinary(signature: string, stdSignDoc: any, from: string, memo: string) {
+  async getTxRawBinary(
+    signature: string,
+    stdSignDoc: any,
+    typeUrl: string,
+    from: string,
+    memo: string
+  ) {
     const { pub_key, sequence, account_number } = await this.getAccountInfo(from) // bad to fetch twice
 
     const pubkey = encodeAnyEthSecp256k1PubKey(fromBase64(pub_key.key))
-    const sequenceNumber = parseInt(sequence)
-
-    // const eip712Message = await this.makeEIP712Tx(msg, from, memo)
-
-    // const sig = await wallet.signTypedData(eip712Message)
+    // const sequenceNumber = parseInt(sequence)
 
     const sigBz = Uint8Array.from(Buffer.from(signature.split('0x')[1], 'hex'))
-    // const publicKeyBase64 = Buffer.from(accountInfo.pubKey, 'hex').toString('base64')
     const signedAmino = {
       signed: stdSignDoc,
       signature: {
@@ -358,9 +359,7 @@ export class CarbonAPI {
         // camcelCase
         const value = camelCaseKeys(msg.value)
         return {
-          // typeUrl: '/Switcheo.carbon.leverage.MsgSetLeverage',
-          typeUrl: '/Switcheo.carbon.coin.MsgWithdraw',
-          // typeUrl: '/Switcheo.carbon.order.MsgCancelOrder',
+          typeUrl,
           value,
         }
       }),
