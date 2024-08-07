@@ -75,6 +75,15 @@ export interface PriceLevel {
   quantity: number
 }
 
+export interface BookSideState {
+  [price: string]: string
+}
+
+export interface BookState {
+  bids: BookSideState
+  asks: BookSideState
+}
+
 export interface Book {
   asks: Array<PriceLevel>
   bids: Array<PriceLevel>
@@ -223,6 +232,7 @@ export interface MarketStats {
   markPrice: number
   symbol: string
   volume: number
+  openInterest?: number
 }
 
 export interface OrderParams {
@@ -312,4 +322,9 @@ export interface EIP712Tx {
   readonly primaryType: string
   readonly domain: TypedDataDomain
   readonly message: any
+}
+
+export interface MarketLeverage {
+  market_id: string
+  leverage: string
 }

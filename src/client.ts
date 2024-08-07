@@ -35,6 +35,8 @@ import {
   DepositSupportedNetworks,
   ClientOpts,
   PerpMarketParams,
+  BookState,
+  BookSideState,
 } from './types'
 import {
   sleep,
@@ -74,7 +76,7 @@ export class Client {
   wsInitialized: boolean
   wsState: string[]
   // market data
-  books: { [market: string]: Book }
+  books: { [market: string]: BookState }
   stats: {
     [market: string]: {
       premiumRate: number
@@ -221,6 +223,59 @@ export class Client {
     this.wsState = state
   }
 
+  private processOrderSide(current, incoming) {
+    for (const item of incoming) {
+      const { price, quantity } = item
+      if (!current[price]) {
+        current[price] = quantity
+      } else {
+        current[price] = new BigNumber(current[price]).plus(quantity).toString()
+      }
+      if (new BigNumber(current[price]).isZero()) {
+        delete current[price]
+      }
+    }
+    return current
+    // const sortedState = Object.keys(ordersMap)
+    //   .sort(sortDesc)
+    //   .map(priceLevel => {
+    //     return {
+    //       price: parseFloat(priceLevel),
+    //       quantity: ordersMap[priceLevel],
+    //     }
+    //   })
+    // return sortedState
+  }
+
+  private humanizeOrderbook(book: BookState, info): Book {
+    const { bids, asks } = book
+    const humanBids = Object.keys(bids)
+      .sort(sortDesc)
+      .map(price => {
+        const p = toHumanPrice(price, info)
+        const quantity = toHumanQuantity(bids[price], info.basePrecision)
+        return {
+          price: p,
+          quantity,
+        }
+      })
+    const humanAsks = Object.keys(asks)
+      .sort(sortAsc)
+      .map(price => {
+        const p = toHumanPrice(price, info)
+        const quantity = toHumanQuantity(asks[price], info.basePrecision)
+        return {
+          price: p,
+          quantity,
+        }
+      })
+
+    return {
+      bids: humanBids,
+      asks: humanAsks,
+    }
+  }
+
   async startWebsocket() {
     this.checkInitialization()
     this.ws = new WebSocket('wss://ws-api.carbon.network/ws')
@@ -229,6 +284,14 @@ export class Client {
         await sleep(1000)
       }
       console.log('websocket connected')
+
+      // this.ws.on('ping', () => {
+      //   console.log('PONG')
+      // })
+
+      this.ws.on('close', () => {
+        console.log('websocket closed')
+      })
 
       if (this.orderbookChannels.length > 0) {
         this.ws.send(
@@ -240,9 +303,19 @@ export class Client {
             },
           })
         )
+        console.log(
+          JSON.stringify({
+            id: `orderbooks`,
+            method: 'subscribe',
+            params: {
+              channels: this.orderbookChannels,
+            },
+          })
+        )
         this.wsState = this.wsState.concat(this.orderbookChannels)
       }
       if (this.subscribeAccount) {
+        console.log('subscribing to account data')
         this.ws.send(
           JSON.stringify({
             id: `positions`,
@@ -295,26 +368,14 @@ export class Client {
             const market = types[1]
 
             if (update_type === 'full_state') {
-              const bids: PriceLevel[] = []
-              const asks: PriceLevel[] = []
+              const bids: BookSideState = {}
+              const asks: BookSideState = {}
 
               for (const level of result.bids) {
-                bids.push({
-                  price: toHumanPrice(level.price, this.marketsInfo[market]),
-                  quantity: toHumanQuantity(
-                    level.quantity,
-                    this.marketsInfo[market].basePrecision
-                  ),
-                })
+                bids[level.price] = level.quantity
               }
               for (const level of result.asks) {
-                asks.push({
-                  price: toHumanPrice(level.price, this.marketsInfo[market]),
-                  quantity: toHumanQuantity(
-                    level.quantity,
-                    this.marketsInfo[market].basePrecision
-                  ),
-                })
+                asks[level.price] = level.quantity
               }
 
               this.books[market] = {
@@ -323,77 +384,12 @@ export class Client {
               }
               this.updateWsState(m.channel)
             } else if (update_type === 'delta') {
-              const newBidsState: BookSideMap = {}
-              const newAsksState: BookSideMap = {}
-              for (const item of this.books[market].bids) {
-                newBidsState[item.price] = item.quantity
-              }
-              for (const item of this.books[market].asks) {
-                newAsksState[item.price] = item.quantity
-              }
-              for (const item of m.result) {
-                const price = toHumanPrice(item.price, this.marketsInfo[market])
-                const quantity = toHumanQuantity(
-                  item.quantity,
-                  this.marketsInfo[market].basePrecision
-                )
-                switch (item.type) {
-                  case 'new':
-                    if (item.side === 'buy') {
-                      newBidsState[price] = quantity
-                      break
-                    }
-                    if (item.side === 'sell') {
-                      newAsksState[price] = quantity
-                      break
-                    }
-                  case 'update':
-                    if (item.side === 'buy') {
-                      if (!newBidsState[price]) {
-                        break
-                      }
-                      newBidsState[price] = new BigNumber(newBidsState[price])
-                        .plus(quantity)
-                        .toNumber()
-                      break
-                    }
-                    if (item.side === 'sell') {
-                      if (!newAsksState[price]) {
-                        break
-                      }
-                      newAsksState[price] = new BigNumber(newAsksState[price])
-                        .plus(quantity)
-                        .toNumber()
-                      break
-                    }
-                  case 'delete':
-                    if (item.side === 'buy') {
-                      delete newBidsState[price]
-                      break
-                    }
-                    if (item.side === 'sell') {
-                      delete newAsksState[price]
-                      break
-                    }
-                }
-              }
+              const newBuys = m.result.filter((order: any) => order.side === 'buy')
+              const newSells = m.result.filter((order: any) => order.side === 'sell')
+              // console.log('new buys', newBuys)
+              const bids = this.processOrderSide(this.books[market].bids, newBuys)
+              const asks = this.processOrderSide(this.books[market].asks, newSells)
 
-              const bids = Object.keys(newBidsState)
-                .sort(sortDesc)
-                .map(priceLevel => {
-                  return {
-                    price: parseFloat(priceLevel),
-                    quantity: newBidsState[priceLevel],
-                  }
-                })
-              const asks = Object.keys(newAsksState)
-                .sort(sortAsc)
-                .map(priceLevel => {
-                  return {
-                    price: parseFloat(priceLevel),
-                    quantity: newAsksState[priceLevel],
-                  }
-                })
               this.books[market] = {
                 bids,
                 asks,
@@ -401,7 +397,9 @@ export class Client {
             } else {
               console.log('unknown update_type', update_type)
             }
-            this.events.emit('orderbook', market, this.books[market])
+            const info = this.marketsInfo[market]
+            const book = this.humanizeOrderbook(this.books[market], info)
+            this.events.emit('orderbook', market, book)
             break
           case 'balances':
             if (update_type === 'full_state') {
@@ -668,34 +666,6 @@ export class Client {
     throw new Error('market not found')
   }
 
-  /* HELPER FUNCTIONS TO DERIVE FUNDING RATE */
-
-  async getUsageMultiplier(): Promise<UsageMultiplier> {
-    const usageMultiplierData = {}
-    const usageMultiplier = await axios.get(
-      'https://api.carbon.network/carbon/perpspool/v1/markets_liquidity_usage_multiplier'
-    )
-    for (const mkt of usageMultiplier.data.markets_liquidity_usage_multiplier) {
-      const { market_id, multiplier } = mkt
-      usageMultiplierData[market_id] = new BigNumber(multiplier)
-    }
-
-    return usageMultiplierData
-  }
-
-  async getPerpPools(): Promise<any> {
-    const pools = await axios.get('https://api.carbon.network/carbon/perpspool/v1/pools')
-    return pools.data.pools
-  }
-
-  getPoolNav(poolStats, id) {
-    for (const p of poolStats) {
-      if (p.pool_id === id) {
-        return new BigNumber(p.total_nav_amount).shiftedBy(-18)
-      }
-    }
-  }
-
   /* GETTERS */
 
   getOrderBook(symbol: string): Book {
@@ -703,7 +673,9 @@ export class Client {
     if (!this.books[id]) {
       throw new Error(`${symbol} not found in order books. Did you subscribe?`)
     }
-    return this.books[id]
+    const rawBook = this.books[id]
+    const info = this.marketsInfo[id]
+    return this.humanizeOrderbook(rawBook, info)
   }
 
   getBalance(denom: MAINNET_TOKENS): Balance {
@@ -817,8 +789,8 @@ export class Client {
 
   async getMarketStats(): Promise<MarketStats[]> {
     await this.updateMarketsStats()
-    const usageMultiplier = await this.getUsageMultiplier()
-    const perpPools = await this.getPerpPools()
+    const usageMultiplier = await this.api.getUsageMultiplier()
+    const perpPools = await this.api.getPerpPools()
     const poolStats = (
       await axios.get('https://api.carbon.network/carbon/perpspool/v1/pools/pool_info')
     ).data.pools
@@ -853,7 +825,7 @@ export class Client {
         }
 
         const maxLiquidityRatio = new BigNumber(max_liquidity_ratio)
-        const poolNav = this.getPoolNav(poolStats, pool.id)
+        const poolNav = this.api.getPoolNav(poolStats, pool.id)
         const allocatedLiquidity = maxLiquidityRatio.times(totalQuoteRatio).times(poolNav)
 
         const position = positions.find(pos => pos.market_id === market_id)

@@ -40,6 +40,18 @@ export function toHumanQuantity(quantity: string, decimals: number): number {
   return new BigNumber(quantity).shiftedBy(-decimals).toNumber()
 }
 
+export function toSatsPrice(
+  price: string,
+  params: MarketParams | PerpMarketParams
+): string {
+  return new BigNumber(price)
+    .shiftedBy(params.quotePrecision - params.basePrecision + 18)
+    .toString(10)
+}
+export function toSatsQuantity(quantity: string, decimals: number): string {
+  return new BigNumber(quantity).shiftedBy(decimals).toString(10)
+}
+
 export function humanizeOrder(o: any, marketParams: MarketParams): Order {
   const order = {
     ...o,
@@ -115,13 +127,17 @@ export function humanizeUserFill(
 }
 
 export function sortDesc(lhs: any, rhs: any) {
-  if (lhs > rhs) return -1
-  if (rhs > rhs) return 1
+  const lhsNum = new BigNumber(lhs)
+  const rhsNum = new BigNumber(rhs)
+  if (lhsNum.gt(rhsNum)) return -1
+  if (rhsNum.gt(lhsNum)) return 1
   return 0
 }
 export function sortAsc(lhs: any, rhs: any) {
-  if (lhs > rhs) return 1
-  if (rhs > rhs) return -1
+  const lhsNum = new BigNumber(lhs)
+  const rhsNum = new BigNumber(rhs)
+  if (lhsNum.gt(rhsNum)) return 1
+  if (rhsNum.gt(lhsNum)) return -1
   return 0
 }
 
@@ -557,4 +573,71 @@ export function convertKeysToSnakeCase(obj) {
     }, {})
   }
   return obj
+}
+
+/**
+ * Calculates initial margin fraction (IMF), which is used to calculate max position leverage
+ * i.e. for btc_z29, margin fraction = 1% + 0.0005% every 0.1 BTC
+ *
+ * IMF = initialMarginBase + (floor[PosSize / RiskStepSize] * InitialMarginStep)
+ * @param size adjusted value of position size
+ * @param initialMarginBase adjusted value of market.initialMarginBase (i.e. 1%)
+ * @param riskStepSize adjusted value of market.riskStepSize (i.e. 0.1 BTC)
+ * @param initialMarginStep adjusted value of market.initialMarginStep (i.e. 0.0005%)
+ * @returns IMF (BigNumber)
+ */
+export function getInitialMarginFraction(
+  size: BigNumber,
+  initialMarginBase: BigNumber,
+  riskStepSize: BigNumber,
+  initialMarginStep: BigNumber
+): BigNumber {
+  // Calculates margin fraction based on size (i.e. 0.0005% every 0.1 BTC)
+  const marginFractionIncrement = riskStepSize.isZero()
+    ? new BigNumber(0)
+    : size
+        .abs()
+        .div(riskStepSize)
+        .integerValue(BigNumber.ROUND_FLOOR)
+        .times(initialMarginStep)
+  return initialMarginBase.plus(marginFractionIncrement)
+}
+
+/**
+ * Calculates required maintenance margin (requiredMM), which is used to calculate est liquidation price
+ *
+ * RequiredMM = IMF * market.maintenanceMarginRatio
+ * @param imf adjusted value of IMF (see getInitialMarginFraction for calculation)
+ * @param maintenanceMarginRatio adjusted value of market.maintenanceMarginRatio
+ * @returns RequiredMM (BigNumber)
+ */
+export function getRequiredMM(
+  imf: BigNumber,
+  maintenanceMarginRatio: BigNumber
+): BigNumber {
+  return imf.times(maintenanceMarginRatio)
+}
+
+/**
+ * Calculates estimated liq. price
+ * (refer to https://www.notion.so/switcheo/Calculating-Est-Liq-Price-Futures-8dd7ae05301648ffb86a60f900c13ae3 for full Est. Liq Price calculation)
+ *
+ * Required Margin = (requiredMM * abs(position.size) * position.avgEntryPrice).decimalPlaces(0, BigNumber.ROUND_CEIL)
+ * Est. Liq Price = (requiredMargin - allocatedMargin + (position.size * entryPrice)) / position.size
+ * @param requiredMM required maintenance margin (see getRequiredMM for calculation)
+ * @param size adjusted value of position size (no need to abs())
+ * @param avgEntryPrice adjusted value of position.avgEntryPrice
+ * @param allocatedMargin adjusted value of position.allocatedMargin
+ * @returns Est. Liq Price (BigNumber)
+ */
+export function estLiqPrice(
+  requiredMM: BigNumber,
+  size: BigNumber,
+  avgEntryPrice: BigNumber,
+  allocatedMargin: BigNumber
+): BigNumber {
+  const requiredMargin = requiredMM.times(size.abs()).times(avgEntryPrice)
+  return size.isZero()
+    ? new BigNumber(0)
+    : requiredMargin.minus(allocatedMargin).div(size).plus(avgEntryPrice)
 }

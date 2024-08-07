@@ -13,6 +13,9 @@ import {
   TokensInfo,
   WalletBalance,
   Token,
+  MarketLeverage,
+  Book,
+  UsageMultiplier,
 } from './types'
 import {
   AuthorizedSignlessMsgs,
@@ -56,6 +59,12 @@ import { ExtensionOptionsWeb3Tx } from 'carbon-js-sdk/lib/codec/ethermint/types/
 import { SignMode } from 'carbon-js-sdk/lib/codec/cosmos/tx/signing/v1beta1/signing'
 import { makeSignDoc } from '@cosmjs/amino/build'
 import { registry as TypesRegistry } from 'carbon-js-sdk/lib/codec'
+import {
+  MsgCancelOrder,
+  MsgCreateOrder,
+  MsgEditOrder,
+} from 'carbon-js-sdk/lib/codec/Switcheo/carbon/order/tx'
+import { MsgSetMargin } from 'carbon-js-sdk/lib/codec/Switcheo/carbon/position/tx'
 
 const registry: Registry = TypesRegistry as Registry
 
@@ -147,16 +156,46 @@ export class CarbonAPI {
     return positions
   }
 
+  async getOpenOrders(address: string): Promise<any> {
+    const url = `https://api.carbon.network/carbon/order/v1/orders?order_status=open&address=${address}`
+    console.log('url', url)
+    const res = (await axios.get(url)).data.orders
+    return res
+  }
+
   async getMarketStats(marketParams: PerpMarketParams[]): Promise<MarketStats[]> {
+    const tokensInfo = await this.getTokensInfo()
+    const marketsInfo = await this.getMarketsInfo(tokensInfo)
     const url = `https://api.carbon.network/carbon/marketstats/v1/stats`
     const res = (await axios.get(url)).data.marketstats
     const stats = res.map(s => {
       return mapKeys(s, (v, k) => camelCase(k))
     })
-    // console.log(marketParams)
+    // funding rate interval
+    const interval = (
+      await axios.get('https://api.carbon.network/carbon/market/v1/controlled_params')
+    ).data.controlled_params.perpetuals_funding_interval
+    const intervalRate = new BigNumber(interval.slice(0, -1))
+    const poolPositions = {}
+
+    const usageMultiplier = await this.getUsageMultiplier()
+    const perpPools = await this.getPerpPools()
+    const poolStats = (
+      await axios.get('https://api.carbon.network/carbon/perpspool/v1/pools/pool_info')
+    ).data.pools
+
     for (const s of stats) {
       const marketParam = marketParams.find(p => p.id === s.marketId)
       if (!marketParam) continue
+
+      const premiumRate = new BigNumber(s.premiumRate).div(
+        new BigNumber(86400).div(intervalRate)
+      )
+      const premiumRateAnnual = new BigNumber(premiumRate)
+        .times(60)
+        .times(24 * 365)
+        .times(100)
+
       const diff = marketParam.basePrecision - marketParam.quotePrecision
 
       s.dayOpen = new BigNumber(s.dayOpen).shiftedBy(diff).toNumber()
@@ -173,6 +212,82 @@ export class CarbonAPI {
       s.openInterest = new BigNumber(s.openInterest)
         .shiftedBy(-marketParam.basePrecision)
         .toNumber()
+      s.premiumRate = premiumRateAnnual.toNumber()
+
+      // borrow rate
+      // find pool id
+      const poolData = getPoolId(s.marketId, perpPools)
+      let borrowRate = new BigNumber(0)
+      let combinedFundingRate = new BigNumber(0)
+      if (poolData) {
+        const { pool, mkt } = poolData
+        const { market_id, max_liquidity_ratio, quote_shape, borrow_fee_multiplier } = mkt
+        const totalQuoteRatio = quote_shape.reduce((prev: BigNumber, quote) => {
+          return prev.plus(quote.quote_amount_ratio)
+        }, new BigNumber(0))
+        const borrowFeeMultiplier = new BigNumber(borrow_fee_multiplier)
+        const maxLiquidityRatio = new BigNumber(max_liquidity_ratio)
+        const poolNav = this.getPoolNav(poolStats, pool.id)
+        if (poolNav) {
+          const allocatedLiquidity = maxLiquidityRatio
+            .times(totalQuoteRatio)
+            .times(poolNav)
+          console.log('pool', pool)
+          const maxBorrowFee = new BigNumber(pool.base_borrow_fee_per_funding_interval)
+          const vaultAddress = pool.vault_address
+          // get pool utilisation rate
+          if (!poolPositions[vaultAddress]) {
+            poolPositions[vaultAddress] = (
+              await axios.get(
+                `https://api.carbon.network/carbon/position/v1/positions?address=${vaultAddress}&status=open`
+              )
+            ).data.positions
+          }
+          const position = poolPositions[vaultAddress].find(
+            pos => pos.market_id === market_id
+          )
+          if (position) {
+            const marketInfo = marketsInfo.find(m => m.id === market_id)
+            const positionHuman = humanizePosition(position, marketInfo)
+            const positionMargin = position
+              ? new BigNumber(positionHuman.allocatedMargin)
+              : new BigNumber(0)
+            const avgEntryPrice = position
+              ? new BigNumber(positionHuman.avgEntryPrice)
+              : new BigNumber(0)
+            const lots = position ? new BigNumber(positionHuman.lots) : new BigNumber(0)
+            const markPrice = new BigNumber(
+              stats.find(s => s.marketId === market_id).markPrice
+            )
+            const upnl = markPrice.minus(avgEntryPrice).times(lots)
+            const positionValue = positionMargin.plus(upnl)
+            let utilizationRate = positionValue.div(allocatedLiquidity)
+
+            if (utilizationRate.gt(1)) {
+              utilizationRate = new BigNumber(1)
+            }
+            if (utilizationRate.lt(0)) {
+              utilizationRate = new BigNumber(0)
+            }
+            const marketLiquidityUsageMultiplier = usageMultiplier[market_id]
+            borrowRate = utilizationRate
+              .times(borrowFeeMultiplier)
+              .times(marketLiquidityUsageMultiplier)
+              .times(maxBorrowFee)
+            if (lots.isPositive()) {
+              borrowRate = borrowRate.times(new BigNumber(-1))
+            }
+          }
+        }
+      }
+      const borrowRateAnnual = borrowRate
+        .times(60)
+        .times(24 * 365)
+        .times(100)
+
+      console.log(s.marketId)
+      console.log('borrowRate', borrowRateAnnual.toNumber())
+      console.log('premiumRateAnnual', premiumRateAnnual.toNumber())
     }
 
     return stats
@@ -199,7 +314,7 @@ export class CarbonAPI {
     return balances
   }
 
-  async getOrderbook(market: string, marketParam: PerpMarketParams): Promise<any> {
+  async getOrderbook(market: string, marketParam: PerpMarketParams): Promise<Book> {
     const url = `https://api.carbon.network/carbon/book/v1/books/${market.replace(
       '/',
       '%252F'
@@ -233,6 +348,12 @@ export class CarbonAPI {
   async getMappedAddress(address: string): Promise<MappedAddress> {
     const url = `https://api.carbon.network/carbon/evmmerge/v1/mapped_address/${address}`
     const res = (await axios.get(url)).data.mapped_address
+    return res
+  }
+
+  async getMarketsLeverage(address: string): Promise<MarketLeverage[]> {
+    const url = `https://api.carbon.network/carbon/leverage/v1/leverages/${address}`
+    const res = (await axios.get(url)).data.market_leverages
     return res
   }
 
@@ -271,8 +392,86 @@ export class CarbonAPI {
     })
 
     const msg = {
-      // typeUrl: CarbonTx.Types.MsgWithdraw,
       type: 'carbon/MsgWithdraw',
+      value,
+    }
+    return msg
+  }
+
+  orderMsg(
+    fromAddress: string,
+    marketId,
+    quantity: string,
+    price: string,
+    side: string,
+    timeInForce: string,
+    orderType: string
+  ) {
+    const value = MsgCreateOrder.fromPartial({
+      creator: fromAddress,
+      isPostOnly: false,
+      isReduceOnly: false,
+      marketId,
+      orderType,
+      quantity,
+      side,
+      referralAddress: 'swth14l98pp2z9wqmarzlqm48qgusxxj8wywmfe6qmy',
+      referralCommission: 30,
+      referralKickback: 0,
+      timeInForce,
+      ...(orderType === 'limit' && { price }),
+    })
+
+    const msg = {
+      type: 'order/CreateOrder',
+      value,
+    }
+    return msg
+  }
+
+  cancelMsg(fromAddress: string, id: string) {
+    const value = MsgCancelOrder.fromPartial({
+      creator: fromAddress,
+      id,
+    })
+    const msg = {
+      type: 'order/CancelOrder',
+      value,
+    }
+    return msg
+  }
+
+  editOrderMsg(
+    fromAddress: string,
+    orderId: string,
+    quantity: string,
+    price: string,
+    stopPrice: string
+  ) {
+    const value = MsgEditOrder.fromPartial({
+      creator: fromAddress,
+      id: orderId,
+      quantity,
+      stopPrice,
+      price,
+    })
+
+    const msg = {
+      type: 'order/EditOrder',
+      value,
+    }
+    return msg
+  }
+
+  setMarginMsg(fromAddress: string, marketId: string, margin: string) {
+    const value = MsgSetMargin.fromPartial({
+      creator: fromAddress,
+      marketId,
+      margin,
+    })
+
+    const msg = {
+      type: 'position/SetMargin',
       value,
     }
     return msg
@@ -365,6 +564,7 @@ export class CarbonAPI {
       }),
       memo: signedAmino.signed.memo,
     }
+
     const signedTxBodyEncodeObject: TxBodyEncodeObject = {
       typeUrl: '/cosmos.tx.v1beta1.TxBody',
       value: signedTxBody,
@@ -388,56 +588,6 @@ export class CarbonAPI {
     })
     const tx = CarbonWallet.TxRaw.encode(rawTx).finish()
     return Buffer.from(tx).toString('base64')
-
-    // const msgValue: MsgWithdraw = msg.value
-
-    // const txBody: TxBody = TxBody.fromPartial({
-    //   messages: [
-    //     {
-    //       typeUrl: CarbonTx.Types.MsgWithdraw,
-    //       value: MsgWithdraw.encode(msgValue).finish(),
-    //     },
-    //   ],
-    //   extensionOptions: [
-    //     {
-    //       typeUrl: '/ethermint.types.v1.ExtensionOptionsWeb3Tx',
-    //       value: ExtensionOptionsWeb3Tx.encode(
-    //         ExtensionOptionsWeb3Tx.fromPartial({
-    //           typedDataChainId: 9790,
-    //           feePayer: from,
-    //           feePayerSig: fromHex(signature.slice(2)),
-    //         })
-    //       ).finish(),
-    //     },
-    //   ],
-    // })
-    // const feeAmount = [
-    //   {
-    //     amount: '0',
-    //     denom: 'swth',
-    //   },
-    // ] // list of coins with only 1 element
-    // const gasLimit = Int53.fromString(DEFAULT_FEE.gas).toNumber()
-
-    // // get TxRaw fromPartial
-    // const txRaw = TxRaw.fromPartial({
-    //   bodyBytes: TxBody.encode(txBody).finish(),
-    //   authInfoBytes: makeAuthInfoBytes(
-    //     [{ pubkey, sequence: sequenceNumber }],
-    //     feeAmount,
-    //     gasLimit,
-    //     undefined,
-    //     from,
-    //     SignMode.SIGN_MODE_LEGACY_AMINO_JSON
-    //   ), // no feeGranter
-    //   signatures: [new Uint8Array()],
-    // })
-
-    // // convert TxRaw to binary to base64
-    // const binary = TxRaw.encode(txRaw).finish()
-    // const payload = Buffer.from(binary).toString('base64')
-
-    // return payload
   }
 
   async signAndHex(sdk: CarbonSDK, msgs: EncodeObject[]): Promise<string> {
@@ -526,4 +676,41 @@ export class CarbonAPI {
     messages.concat(encodedAllowanceMsg)
     return messages
   }
+
+  async getUsageMultiplier(): Promise<UsageMultiplier> {
+    const usageMultiplierData = {}
+    const usageMultiplier = await axios.get(
+      'https://api.carbon.network/carbon/perpspool/v1/markets_liquidity_usage_multiplier'
+    )
+    for (const mkt of usageMultiplier.data.markets_liquidity_usage_multiplier) {
+      const { market_id, multiplier } = mkt
+      usageMultiplierData[market_id] = new BigNumber(multiplier)
+    }
+
+    return usageMultiplierData
+  }
+
+  async getPerpPools(): Promise<any> {
+    const pools = await axios.get('https://api.carbon.network/carbon/perpspool/v1/pools')
+    return pools.data.pools
+  }
+  getPoolNav(poolStats, id) {
+    for (const p of poolStats) {
+      if (p.pool_id === id) {
+        return new BigNumber(p.total_nav_amount).shiftedBy(-18)
+      }
+    }
+  }
+}
+
+function getPoolId(marketId, poolInfo) {
+  for (const p of poolInfo) {
+    const { registered_markets, pool } = p
+    for (const mkt of registered_markets) {
+      if (mkt.market_id === marketId) {
+        return { pool, mkt }
+      }
+    }
+  }
+  return null
 }
