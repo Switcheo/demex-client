@@ -68,6 +68,7 @@ export class Client {
   orderbookChannels: string[]
   address: string | null
   subscribeAccount: boolean = false
+  subscribeStats: boolean = false
   // mappings
   marketIdtoSymbol: { [symbol: string]: string }
   oraclesIdtoSymbol: { [symbol: string]: string }
@@ -85,6 +86,21 @@ export class Client {
       volume: number
       lastPrice: number
       fundingRate?: number
+
+      market_id: string
+      market_type: string
+      day_open: string
+      day_high: string
+      day_low: string
+      day_close: string
+      day_volume: string
+      day_quote_volume: string
+      index_price: string
+      mark_price: string
+      last_price: string
+      premium_rate: string
+      last_funding_at: string
+      open_interest: string
     }
   }
   // account data
@@ -107,6 +123,7 @@ export class Client {
     this.clientOptions = options
     this.orderbookChannels = []
     this.subscribeAccount = false
+    this.subscribeStats = false
     this.address = null
     this.wsInitialized = false
     this.wsState = []
@@ -180,7 +197,7 @@ export class Client {
 
     await this.updateMarketsInfo()
     await this.updateTokensInfo()
-    await this.getMarketStats()
+    // await this.getMarketStats()
     // this.fetchOraclePrices()
 
     if (this.clientOptions && this.clientOptions.enablePolling) {
@@ -203,6 +220,10 @@ export class Client {
       }
     }
     this.orderbookChannels = marketsToSubscribe
+  }
+  subscribeMarketStats() {
+    this.checkInitialization()
+    this.subscribeStats = true
   }
   subscribeAccountData() {
     this.checkInitialization()
@@ -236,15 +257,6 @@ export class Client {
       }
     }
     return current
-    // const sortedState = Object.keys(ordersMap)
-    //   .sort(sortDesc)
-    //   .map(priceLevel => {
-    //     return {
-    //       price: parseFloat(priceLevel),
-    //       quantity: ordersMap[priceLevel],
-    //     }
-    //   })
-    // return sortedState
   }
 
   private humanizeOrderbook(book: BookState, info): Book {
@@ -313,6 +325,18 @@ export class Client {
           })
         )
         this.wsState = this.wsState.concat(this.orderbookChannels)
+      }
+      if (this.subscribeStats) {
+        console.log('subscribing to market stats')
+        this.ws.send(
+          JSON.stringify({
+            id: `stats`,
+            method: 'subscribe',
+            params: {
+              channels: [`market_stats`],
+            },
+          })
+        )
       }
       if (this.subscribeAccount) {
         console.log('subscribing to account data')
@@ -517,6 +541,16 @@ export class Client {
             }
             this.events.emit('accountTrades', this.last200Fills)
             break
+          case 'market_stats':
+            // console.log(m.result)
+            const markets = Object.keys(m.result)
+            for (const market of markets) {
+              const stat = m.result[market]
+              this.stats[market] = {
+                ...m.result[market],
+              }
+            }
+            break
         }
       }
     })
@@ -614,13 +648,13 @@ export class Client {
             )
             const day_quote_volume = new BigNumber(m.day_quote_volume).shiftedBy(-18)
 
-            this.stats[m.market_id] = {
-              markPrice: markPrice.dp(indexPrice.dp()).toNumber(),
-              indexPrice: indexPrice.toNumber(),
-              premiumRate: parseFloat(m.premium_rate),
-              volume: day_quote_volume.dp(0).toNumber(),
-              lastPrice: lastPrice.toNumber(),
-            }
+            // this.stats[m.market_id] = {
+            //   markPrice: markPrice.dp(indexPrice.dp()).toNumber(),
+            //   indexPrice: indexPrice.toNumber(),
+            //   premiumRate: parseFloat(m.premium_rate),
+            //   volume: day_quote_volume.dp(0).toNumber(),
+            //   lastPrice: lastPrice.toNumber(),
+            // }
           }
         }
       }
@@ -788,7 +822,7 @@ export class Client {
   }
 
   async getMarketStats(): Promise<MarketStats[]> {
-    await this.updateMarketsStats()
+    // await this.updateMarketsStats()
     const usageMultiplier = await this.api.getUsageMultiplier()
     const perpPools = await this.api.getPerpPools()
     const poolStats = (
