@@ -464,6 +464,7 @@ export class Client {
               for (const o of result.open_orders) {
                 const { market_id } = o
                 const info = this.marketsInfo[market_id]
+                if (!info) continue
                 const order = humanizeOrder(o, info)
 
                 if (!openOrders[market_id]) {
@@ -478,6 +479,7 @@ export class Client {
                 const { market_id } = o
                 if (o.type === 'update') {
                   const { status } = o
+                  if (!this.openOrders[market_id]) return
                   const index = this.openOrders[market_id].findIndex(
                     order => order.id === o.id
                   )
@@ -485,11 +487,13 @@ export class Client {
                     this.openOrders[market_id].splice(index, 1)
                   } else {
                     const info = this.marketsInfo[market_id]
+                    if (!info) continue
                     const order = humanizeOrder(o, info)
                     this.openOrders[market_id][index] = order
                   }
                 } else if (o.type === 'new') {
                   const info = this.marketsInfo[market_id]
+                  if (!info) continue
                   const order = humanizeOrder(o, info)
                   if (!this.openOrders[market_id]) {
                     this.openOrders[market_id] = []
@@ -512,7 +516,11 @@ export class Client {
             } else {
               for (const p of result) {
                 const position = humanizePosition(p, this.marketsInfo[p.market_id])
-                this.openPositions[p.market_id] = position
+                if (position.lots === 0) {
+                  delete this.openPositions[p.market_id]
+                } else {
+                  this.openPositions[p.market_id] = position
+                }
               }
             }
             this.events.emit('positions', this.openPositions)
@@ -521,6 +529,7 @@ export class Client {
             if (update_type === 'full_state') {
               const fills = []
               for (const f of result) {
+                if (!this.marketsInfo[f.market_id]) continue
                 const fill = humanizeFill(f, this.marketsInfo[f.market_id])
                 fills.push(fill)
               }
@@ -529,6 +538,7 @@ export class Client {
             } else {
               const fills = this.last200Fills
               for (const f of result) {
+                if (!this.marketsInfo[f.market_id]) continue
                 const fill = humanizeFill(f, this.marketsInfo[f.market_id])
                 fills.unshift(fill)
               }
@@ -730,7 +740,12 @@ export class Client {
     for (const market of Object.keys(this.openPositions)) {
       const position = this.openPositions[market]
       position.symbol = this.marketIdtoSymbol[market]
-      position.markPrice = this.stats[market].markPrice
+      if (!this.stats[market]) continue
+      const info = this.marketsInfo[market]
+
+      position.markPrice = new BigNumber(this.stats[market].mark_price)
+        .shiftedBy(info.basePrecision - info.quotePrecision)
+        .toNumber()
 
       position.unrealizedPnl =
         position.lots > 0
