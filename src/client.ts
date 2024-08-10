@@ -315,15 +315,6 @@ export class Client {
             },
           })
         )
-        console.log(
-          JSON.stringify({
-            id: `orderbooks`,
-            method: 'subscribe',
-            params: {
-              channels: this.orderbookChannels,
-            },
-          })
-        )
         this.wsState = this.wsState.concat(this.orderbookChannels)
       }
       if (this.subscribeStats) {
