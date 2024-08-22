@@ -588,7 +588,7 @@ export class Client {
     const { block_height } = persistence
     const heightDifference = new BigNumber(latest_block_height).minus(block_height)
 
-    if (heightDifference.gt(15)) {
+    if (heightDifference.gt(150)) {
       throw new Error(
         `api is lagging behind the chain height by more than ${heightDifference} blocks`
       )
@@ -705,6 +705,7 @@ export class Client {
 
   getOrderBook(symbol: string): Book {
     const { id } = this.getPerpMarketInfo(symbol)
+    console.log('id', id)
     if (!this.books[id]) {
       throw new Error(`${symbol} not found in order books. Did you subscribe?`)
     }
@@ -731,19 +732,22 @@ export class Client {
     for (const market of Object.keys(this.openPositions)) {
       const position = this.openPositions[market]
       position.symbol = this.marketIdtoSymbol[market]
-      if (!this.stats[market]) continue
-      const info = this.marketsInfo[market]
+      if (!this.stats[market]) {
+        positions.push(position)
+      } else {
+        const info = this.marketsInfo[market]
 
-      position.markPrice = new BigNumber(this.stats[market].mark_price)
-        .shiftedBy(info.basePrecision - info.quotePrecision)
-        .toNumber()
+        position.markPrice = new BigNumber(this.stats[market].mark_price)
+          .shiftedBy(info.basePrecision - info.quotePrecision)
+          .toNumber()
 
-      position.unrealizedPnl =
-        position.lots > 0
-          ? (position.markPrice - position.avgEntryPrice) * position.lots
-          : (position.avgEntryPrice - position.markPrice) * position.lots
+        position.unrealizedPnl =
+          position.lots > 0
+            ? (position.markPrice - position.avgEntryPrice) * position.lots
+            : (position.avgEntryPrice - position.markPrice) * position.lots
 
-      positions.push(position)
+        positions.push(position)
+      }
     }
     return positions
   }
