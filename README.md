@@ -60,6 +60,7 @@ async function run() {
 
   const bot = new Client()
   await bot.init({ mnemonic: "YOUR MNEMONIC"})
+  bot.subscribeMarketStats()
   bot.subscribeOrderBooks(['BTC', 'ETH'])
   bot.subscribeAccountData()
 
