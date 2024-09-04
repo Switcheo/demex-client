@@ -289,6 +289,7 @@ export class Client {
   }
 
   async startWebsocket() {
+    const unix = dayjs().unix()
     this.checkInitialization()
     this.ws = new WebSocket('wss://ws-api.carbon.network/ws')
     this.ws.on('open', async () => {
@@ -308,7 +309,7 @@ export class Client {
       if (this.orderbookChannels.length > 0) {
         this.ws.send(
           JSON.stringify({
-            id: `orderbooks`,
+            id: `orderbooks-${unix.toString()}`,
             method: 'subscribe',
             params: {
               channels: this.orderbookChannels,
@@ -318,10 +319,11 @@ export class Client {
         this.wsState = this.wsState.concat(this.orderbookChannels)
       }
       if (this.subscribeStats) {
+
         console.log('subscribing to market stats')
         this.ws.send(
           JSON.stringify({
-            id: `stats`,
+            id: `stats-${unix.toString()}`,
             method: 'subscribe',
             params: {
               channels: [`market_stats`],
@@ -333,7 +335,7 @@ export class Client {
         console.log('subscribing to account data')
         this.ws.send(
           JSON.stringify({
-            id: `positions`,
+            id: `positions-${this.address.slice(-4)}`,
             method: 'subscribe',
             params: {
               channels: [`positions:${this.address}`],
@@ -342,7 +344,7 @@ export class Client {
         )
         this.ws.send(
           JSON.stringify({
-            id: `orders`,
+            id: `orders-${this.address.slice(-4)}`,
             method: 'subscribe',
             params: {
               channels: [`orders:${this.address}`],
@@ -351,14 +353,14 @@ export class Client {
         )
         this.ws.send(
           JSON.stringify({
-            id: `balances`,
+            id: `balances-${this.address.slice(-4)}`,
             method: 'subscribe',
             params: { channels: [`balances:${this.address}`] },
           })
         )
         this.ws.send(
           JSON.stringify({
-            id: `account_trades`,
+            id: `account_trades-${this.address.slice(-4)}`,
             method: 'subscribe',
             params: { channels: [`account_trades:${this.address}`] },
           })

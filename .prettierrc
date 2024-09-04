@@ -1,4 +1,4 @@
-{
+`{
   "arrowParens": "avoid",
   "printWidth": 90,
   "trailingComma": "es5",
@@ -6,3 +6,4 @@
   "semi": false,
   "singleQuote": true
 }
+`
