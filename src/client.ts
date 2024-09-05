@@ -707,7 +707,6 @@ export class Client {
 
   getOrderBook(symbol: string): Book {
     const { id } = this.getPerpMarketInfo(symbol)
-    console.log('id', id)
     if (!this.books[id]) {
       throw new Error(`${symbol} not found in order books. Did you subscribe?`)
     }
