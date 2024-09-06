@@ -37,6 +37,7 @@ import {
   PerpMarketParams,
   BookState,
   BookSideState,
+  OrderType,
 } from './types'
 import {
   sleep,
@@ -1008,19 +1009,20 @@ export class Client {
     const priceBN = new BigNumber(params.price).shiftedBy(-priceAdjustment)
     const price = this.roundPrice(priceBN, params.side, market).shiftedBy(18).toString()
 
+    const tif = params.type === OrderType.Limit ? 'gtc' : 'ioc'
     const value = MsgCreateOrder.fromPartial({
       creator: this.sdk.wallet.bech32Address,
       isPostOnly: false,
       isReduceOnly: typeof params.isPostOnly === 'undefined' ? false : params.isPostOnly,
       marketId: market,
-      orderType: 'limit',
+      orderType: params.type,
       price,
       quantity,
       side: params.side,
       referralAddress: params.referrer_address ? params.referrer_address : '',
       referralCommission: 15,
       referralKickback: 0,
-      timeInForce: params.tif ? params.tif : 'gtc',
+      timeInForce: params.tif ? params.tif : tif,
     })
     const message = {
       typeUrl: CarbonTx.Types.MsgCreateOrder,
