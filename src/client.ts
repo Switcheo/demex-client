@@ -196,8 +196,8 @@ export class Client {
 
     console.log(`wallet address: ${this.address}`)
 
-    await this.updateMarketsInfo()
     await this.updateTokensInfo()
+    await this.updateMarketsInfo()
     // await this.getMarketStats()
     // this.fetchOraclePrices()
 
@@ -436,7 +436,9 @@ export class Client {
               }
               this.updateWsState(m.channel)
             } else {
-              for (const r of result) {
+              const keys = Object.keys(result)
+              for (const key of keys) {
+                const r = result[key]
                 const { denom, available, order, position } = r
                 const { decimals } = this.tokensInfo[denom]
                 this.balances[denom] = {
@@ -681,12 +683,15 @@ export class Client {
         marketInfo.description.includes('Perpetual') &&
         marketInfo.isActive
       ) {
-        const key = marketInfo.displayName.split('_')[0]
-        this.marketIdtoSymbol[marketInfo.id] = key
-        perps[key] = marketInfo
+        const denom = marketInfo.base
+        const symbol = this.tokensInfo[denom].symbol
+        // const key = marketInfo.displayName.split('_')[0]
+        this.marketIdtoSymbol[marketInfo.id] = symbol
+        perps[symbol] = marketInfo
         this.oraclesIdtoSymbol[marketInfo.indexOracleId] =
-          marketInfo.displayName.split('_')[0]
-        marketsList.push({ ...marketInfo, market: key })
+          // marketInfo.displayName.split('_')[0]
+          symbol
+        marketsList.push({ ...marketInfo, symbol })
       }
     }
     this.perpMarkets = perps
@@ -772,7 +777,7 @@ export class Client {
     if (this.openPositions[id]) {
       const position = this.openPositions[id]
       position.symbol = symbol
-      position.markPrice = this.stats[id].markPrice
+      position.markPrice = parseFloat(this.stats[id].mark_price)
 
       position.unrealizedPnl =
         position.lots > 0
@@ -984,9 +989,9 @@ export class Client {
 
   roundPrice(price, side, market) {
     const { tickSize } = this.marketsInfo[market]
-    if (side === OrderSide.Sell)
-      return price.div(tickSize).integerValue(BigNumber.ROUND_CEIL).times(tickSize)
-    return price.div(tickSize).integerValue(BigNumber.ROUND_DOWN).times(tickSize)
+    // if (side === OrderSide.Sell)
+    //   return price.div(tickSize).integerValue(BigNumber.ROUND_CEIL).times(tickSize)
+    return price.div(tickSize).integerValue().times(tickSize)
   }
 
   roundQuantity(quantity, market) {
@@ -1002,12 +1007,12 @@ export class Client {
     const market = this.perpMarkets[params.symbol].id
     const { basePrecision, quotePrecision } = this.perpMarkets[params.symbol]
 
-    const quantityBN = new BigNumber(params.quantity).shiftedBy(basePrecision)
-    const quantity = this.roundQuantity(quantityBN, market).toString(10)
+    let quantity = this.roundQuantity(new BigNumber(params.quantity), market)
+    quantity = new BigNumber(quantity).shiftedBy(basePrecision).toString(10)
 
+    let price = this.roundPrice(new BigNumber(params.price), params.side, market)
     const priceAdjustment = basePrecision - quotePrecision
-    const priceBN = new BigNumber(params.price).shiftedBy(-priceAdjustment)
-    const price = this.roundPrice(priceBN, params.side, market).shiftedBy(18).toString()
+    price = new BigNumber(price).shiftedBy(-priceAdjustment).shiftedBy(18).toString()
 
     const tif = params.type === OrderType.Limit ? 'gtc' : 'ioc'
     const value = MsgCreateOrder.fromPartial({
@@ -1046,8 +1051,8 @@ export class Client {
     }
   }
 
-  async cancelAll(market: string): Promise<Txn> {
-    const id = this.perpMarkets[market].id
+  async cancelAll(symbol: string): Promise<Txn> {
+    const id = this.perpMarkets[symbol].id
     const tx = (await this.sdk.wallet.sendTx({
       typeUrl: CarbonTx.Types.MsgCancelAll,
       value: {
@@ -1100,7 +1105,7 @@ export class Client {
       typeUrl: CarbonTx.Types.MsgSetLeverage,
       value: {
         creator: this.sdk.wallet.bech32Address,
-        market: this.perpMarkets[symbol].id,
+        marketId: this.perpMarkets[symbol].id,
         leverage: new BigNumber(leverage).shiftedBy(18).toString(),
       },
     })) as any

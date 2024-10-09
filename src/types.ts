@@ -67,7 +67,7 @@ export interface MarketParams {
 }
 
 export interface PerpMarketParams extends MarketParams {
-  market: string
+  symbol: string
 }
 
 export interface PriceLevel {
@@ -273,7 +273,7 @@ export interface Txn {
 }
 
 export interface UserLeverage {
-  market: string
+  symbol: string
   leverage: number
 }
 

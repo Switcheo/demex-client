@@ -127,7 +127,7 @@ export class CarbonAPI {
         // let key = marketInfo.displayName.split('_')[0]
         // if (key === 'BTC') key = 'WBTC'
         // if (key === 'NEO') key = 'bNEO'
-        marketsList.push({ ...marketInfo, market: key })
+        marketsList.push({ ...marketInfo, symbol: key })
       }
     }
     return marketsList
