@@ -1001,9 +1001,8 @@ export class Client {
 
   /* SIGNER FUNCTIONS */
 
-  // @note: order id is not returned in the transaction response.
-  // Use getOpenOrders to get the order id
-  async submitOrder(params: OrderParams): Promise<Txn> {
+  
+  createOrderMsg(params: OrderParams) {
     const market = this.perpMarkets[params.symbol].id
     const { basePrecision, quotePrecision } = this.perpMarkets[params.symbol]
 
@@ -1033,7 +1032,12 @@ export class Client {
       typeUrl: CarbonTx.Types.MsgCreateOrder,
       value,
     }
-
+    return message
+  }
+  // @note: order id is not returned in the transaction response.
+  // Use getOpenOrders to get the order id
+  async submitOrder(params: OrderParams): Promise<Txn> {
+    const message = this.createOrderMsg(params)
     const tx = (await this.sdk.wallet.sendTx(message)) as any
 
     if (tx.code === 0) {
