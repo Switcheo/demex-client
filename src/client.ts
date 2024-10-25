@@ -292,7 +292,8 @@ export class Client {
   async startWebsocket() {
     const unix = dayjs().unix()
     this.checkInitialization()
-    this.ws = new WebSocket('wss://ws-api.carbon.network/ws')
+    this.ws = new WebSocket(this.sdk.getConfig().wsUrl)
+    // this.ws = new WebSocket('wss://ws-api.carbon.network/ws')
     this.ws.on('open', async () => {
       while (this.ws.readyState !== 1) {
         await sleep(1000)
@@ -996,7 +997,7 @@ export class Client {
 
   roundQuantity(quantity, market) {
     const { lotSize } = this.marketsInfo[market]
-    return quantity.div(lotSize).integerValue(BigNumber.ROUND_DOWN).times(lotSize)
+    return quantity.div(lotSize).integerValue().times(lotSize)
   }
 
   /* SIGNER FUNCTIONS */
