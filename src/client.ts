@@ -115,6 +115,7 @@ export class Client {
     arb: ethers.Signer | null
   }
   api: CarbonAPI
+  baseUrl: string
 
   constructor(options?: ClientOpts) {
     this.tokensInfo = {}
@@ -149,8 +150,13 @@ export class Client {
       eth: null,
       arb: null,
     }
-
-    this.api = new CarbonAPI()
+    this.baseUrl = 'api'
+    if (options && options.network) {
+      if (options.network === CarbonSDK.Network.TestNet) {
+        this.baseUrl = 'test-api'
+      } 
+    } 
+    this.api = new CarbonAPI(this.baseUrl)
   }
 
   /**
@@ -615,7 +621,7 @@ export class Client {
 
   /* Gets all tokens parameters */
   async updateTokensInfo() {
-    const url = `https://api.carbon.network/carbon/coin/v1/tokens?pagination.limit=1500`
+    const url = `https://${this.baseUrl}.carbon.network/carbon/coin/v1/tokens?pagination.limit=1500`
     const res = (await axios.get(url)).data.tokens
     for (const t of res) {
       const token = mapKeys(t, (v, k) => camelCase(k))
@@ -637,7 +643,7 @@ export class Client {
   async updateMarketsStats(): Promise<void> {
     try {
       const now = dayjs()
-      const url = 'https://api.carbon.network/carbon/marketstats/v1/stats'
+      const url = `https://${this.baseUrl}.carbon.network/carbon/marketstats/v1/stats`
       const { marketstats } = (await axios.get(url)).data
       for (const m of marketstats) {
         if (m.market_type === 'futures') {
@@ -685,7 +691,7 @@ export class Client {
         marketInfo.isActive
       ) {
         const denom = marketInfo.base
-        const symbol = this.tokensInfo[denom].symbol
+        const symbol = this.tokensInfo[denom].symbol.toUpperCase()
         // const key = marketInfo.displayName.split('_')[0]
         this.marketIdtoSymbol[marketInfo.id] = symbol
         perps[symbol] = marketInfo
@@ -722,7 +728,7 @@ export class Client {
     return this.humanizeOrderbook(rawBook, info)
   }
 
-  getBalance(denom: MAINNET_TOKENS): Balance {
+  getBalance(denom: string): Balance {
     if (this.balances[denom]) {
       return this.balances[denom]
     }

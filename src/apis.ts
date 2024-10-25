@@ -69,9 +69,13 @@ import { MsgSetMargin } from 'carbon-js-sdk/lib/codec/Switcheo/carbon/position/t
 const registry: Registry = TypesRegistry as Registry
 
 export class CarbonAPI {
+  baseUrl: string
+  constructor(baseUrl: string) {
+    this.baseUrl = baseUrl
+  }
   async getTokensInfo(): Promise<TokensInfo> {
     const tokens = {}
-    const url = `https://api.carbon.network/carbon/coin/v1/tokens?pagination.limit=1500`
+    const url = `https://${this.baseUrl}.carbon.network/carbon/coin/v1/tokens?pagination.limit=1500`
     const res = (await axios.get(url)).data.tokens
 
     for (const token of res) {
@@ -86,7 +90,7 @@ export class CarbonAPI {
   }
 
   async getMarketsInfo(tokensInfo: TokensInfo): Promise<PerpMarketParams[]> {
-    const url = `https://api.carbon.network/carbon/market/v1/markets?pagination.limit=800`
+    const url = `https://${this.baseUrl}.carbon.network/carbon/market/v1/markets?pagination.limit=800`
     const res = (await axios.get(url)).data.markets
     const marketsList = []
     for (const m of res) {
@@ -135,7 +139,7 @@ export class CarbonAPI {
 
   async getUserLeverage(address, market): Promise<number> {
     market = market.replace('/', '%252F')
-    const url = `https://api.carbon.network/carbon/leverage/v1/leverages/${address}/${market}`
+    const url = `https://${this.baseUrl}.carbon.network/carbon/leverage/v1/leverages/${address}/${market}`
     const res = parseFloat((await axios.get(url)).data.market_leverage.leverage)
     return res
   }
@@ -145,7 +149,7 @@ export class CarbonAPI {
 
     const marketsParams = await this.getMarketsInfo(tokensInfo)
     const positions: Position[] = []
-    const url = `https://api.carbon.network/carbon/position/v1/positions?status=open&address=${address}`
+    const url = `https://${this.baseUrl}.carbon.network/carbon/position/v1/positions?status=open&address=${address}`
     const res = (await axios.get(url)).data.positions
     for (const market of res) {
       const marketInfo = marketsParams.find(p => p.id === market.market_id)
@@ -157,7 +161,7 @@ export class CarbonAPI {
   }
 
   async getOpenOrders(address: string): Promise<any> {
-    const url = `https://api.carbon.network/carbon/order/v1/orders?order_status=open&address=${address}`
+    const url = `https://${this.baseUrl}.carbon.network/carbon/order/v1/orders?order_status=open&address=${address}`
     console.log('url', url)
     const res = (await axios.get(url)).data.orders
     return res
@@ -166,14 +170,14 @@ export class CarbonAPI {
   async getMarketStats(marketParams: PerpMarketParams[]): Promise<MarketStats[]> {
     const tokensInfo = await this.getTokensInfo()
     const marketsInfo = await this.getMarketsInfo(tokensInfo)
-    const url = `https://api.carbon.network/carbon/marketstats/v1/stats`
+    const url = `https://${this.baseUrl}.carbon.network/carbon/marketstats/v1/stats`
     const res = (await axios.get(url)).data.marketstats
     const stats = res.map(s => {
       return mapKeys(s, (v, k) => camelCase(k))
     })
     // funding rate interval
     const interval = (
-      await axios.get('https://api.carbon.network/carbon/market/v1/controlled_params')
+      await axios.get(`https://${this.baseUrl}.carbon.network/carbon/market/v1/controlled_params`)
     ).data.controlled_params.perpetuals_funding_interval
     const intervalRate = new BigNumber(interval.slice(0, -1))
     const poolPositions = {}
@@ -181,7 +185,7 @@ export class CarbonAPI {
     const usageMultiplier = await this.getUsageMultiplier()
     const perpPools = await this.getPerpPools()
     const poolStats = (
-      await axios.get('https://api.carbon.network/carbon/perpspool/v1/pools/pool_info')
+      await axios.get(`https://${this.baseUrl}.carbon.network/carbon/perpspool/v1/pools/pool_info`)
     ).data.pools
 
     for (const s of stats) {
@@ -239,7 +243,7 @@ export class CarbonAPI {
           if (!poolPositions[vaultAddress]) {
             poolPositions[vaultAddress] = (
               await axios.get(
-                `https://api.carbon.network/carbon/position/v1/positions?address=${vaultAddress}&status=open`
+                `https://${this.baseUrl}.carbon.network/carbon/position/v1/positions?address=${vaultAddress}&status=open`
               )
             ).data.positions
           }
@@ -294,7 +298,7 @@ export class CarbonAPI {
   }
 
   async getBalances(address: string, tokenParams: any): Promise<WalletBalance[]> {
-    const url = `https://api.carbon.network/carbon/coin/v1/balances/${address}`
+    const url = `https://${this.baseUrl}.carbon.network/carbon/coin/v1/balances/${address}`
     const res = (await axios.get(url)).data.token_balances
     const balances = []
     for (const token of res) {
@@ -315,7 +319,7 @@ export class CarbonAPI {
   }
 
   async getOrderbook(market: string, marketParam: PerpMarketParams): Promise<Book> {
-    const url = `https://api.carbon.network/carbon/book/v1/books/${market.replace(
+    const url = `https://${this.baseUrl}.carbon.network/carbon/book/v1/books/${market.replace(
       '/',
       '%252F'
     )}`
@@ -340,19 +344,19 @@ export class CarbonAPI {
   }
 
   async getAccountInfo(address: string): Promise<AccountInfoResponse> {
-    const url = `https://api.carbon.network/cosmos/auth/v1beta1/account_info/${address}`
+    const url = `https://${this.baseUrl}.carbon.network/cosmos/auth/v1beta1/account_info/${address}`
     const res = (await axios.get(url)).data.info
     return res
   }
 
   async getMappedAddress(address: string): Promise<MappedAddress> {
-    const url = `https://api.carbon.network/carbon/evmmerge/v1/mapped_address/${address}`
+    const url = `https://${this.baseUrl}.carbon.network/carbon/evmmerge/v1/mapped_address/${address}`
     const res = (await axios.get(url)).data.mapped_address
     return res
   }
 
   async getMarketsLeverage(address: string): Promise<MarketLeverage[]> {
-    const url = `https://api.carbon.network/carbon/leverage/v1/leverages/${address}`
+    const url = `https://${this.baseUrl}.carbon.network/carbon/leverage/v1/leverages/${address}`
     const res = (await axios.get(url)).data.market_leverages
     return res
   }
@@ -680,7 +684,7 @@ export class CarbonAPI {
   async getUsageMultiplier(): Promise<UsageMultiplier> {
     const usageMultiplierData = {}
     const usageMultiplier = await axios.get(
-      'https://api.carbon.network/carbon/perpspool/v1/markets_liquidity_usage_multiplier'
+      `https://${this.baseUrl}.carbon.network/carbon/perpspool/v1/markets_liquidity_usage_multiplier`
     )
     for (const mkt of usageMultiplier.data.markets_liquidity_usage_multiplier) {
       const { market_id, multiplier } = mkt
@@ -691,7 +695,7 @@ export class CarbonAPI {
   }
 
   async getPerpPools(): Promise<any> {
-    const pools = await axios.get('https://api.carbon.network/carbon/perpspool/v1/pools')
+    const pools = await axios.get(`https://${this.baseUrl}.carbon.network/carbon/perpspool/v1/pools`)
     return pools.data.pools
   }
   getPoolNav(poolStats, id) {
