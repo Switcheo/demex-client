@@ -243,7 +243,6 @@ export interface OrderParams {
   type?: OrderType
   tif?: OrderTIF
   stopPrice?: string
-  postOnly?: boolean
   referrer_address?: string
   isPostOnly?: boolean
   isReduceOnly?: boolean
