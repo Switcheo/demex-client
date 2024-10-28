@@ -246,6 +246,7 @@ export interface OrderParams {
   postOnly?: boolean
   referrer_address?: string
   isPostOnly?: boolean
+  isReduceOnly?: boolean
 }
 
 export enum OrderType {

@@ -1023,8 +1023,8 @@ export class Client {
     const tif = params.type === OrderType.Limit ? 'gtc' : 'ioc'
     const value = MsgCreateOrder.fromPartial({
       creator: this.sdk.wallet.bech32Address,
-      isPostOnly: false,
-      isReduceOnly: typeof params.isPostOnly === 'undefined' ? false : params.isPostOnly,
+      isReduceOnly: typeof params.isReduceOnly === 'undefined' ? false : params.isReduceOnly,
+      isPostOnly: typeof params.isPostOnly === 'undefined' ? false : params.isPostOnly,
       marketId: market,
       orderType: params.type,
       price,

@@ -1,6 +1,6 @@
 {
   "name": "demex-client",
-  "version": "0.1.16",
+  "version": "0.1.17",
   "description": "A perp trading client built on top of carbon-js-sdk",
   "main": "lib/index.js",
   "types": "./lib/index.d.ts",
