@@ -213,6 +213,7 @@ export interface WalletInitOpts {
   address?: string
   ethSigner?: ethers.Signer
   arbSigner?: ethers.Signer
+  skipAPICheck? : boolean
 }
 
 export enum MAINNET_TOKENS {

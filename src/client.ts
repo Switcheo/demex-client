@@ -171,7 +171,7 @@ export class Client {
     this.sdk = await CarbonSDK.instance(settings)
 
     if (settings.network === CarbonSDK.Network.MainNet) {
-      await this.checkLiveliness()
+      await this.checkLiveliness(opts.skipAPICheck)
     }
 
     if (opts.pkey) {
@@ -578,7 +578,7 @@ export class Client {
   /**
    * Checks whether the chain is alive and the api is in sync with the chain.
    */
-  async checkLiveliness() {
+  async checkLiveliness(skipAPICheck) {
     const url = 'https://tm-api.carbon.network/status'
     const { result } = (await axios.get(url)).data
 
@@ -590,6 +590,8 @@ export class Client {
     if (diff > 60) {
       throw new Error('chain is dead')
     }
+
+    if (skipAPICheck) return
 
     const persistence = (
       await axios.get(
