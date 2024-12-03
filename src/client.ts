@@ -693,6 +693,7 @@ export class Client {
         marketInfo.isActive
       ) {
         const denom = marketInfo.base
+        if (!this.tokensInfo[denom]) continue
         const symbol = this.tokensInfo[denom].symbol.toUpperCase()
         // const key = marketInfo.displayName.split('_')[0]
         this.marketIdtoSymbol[marketInfo.id] = symbol
