@@ -635,9 +635,10 @@ export class Client {
         bridgeId: parseInt(token.bridgeId),
       }
 
-      if (tokenInfo.isActive) {
-        this.tokensInfo[tokenInfo.denom] = tokenInfo
-      }
+      this.tokensInfo[tokenInfo.denom] = tokenInfo
+      // if (tokenInfo.isActive) {
+      //   this.tokensInfo[tokenInfo.denom] = tokenInfo
+      // }
     }
     return this.tokensInfo
   }
@@ -693,7 +694,10 @@ export class Client {
         marketInfo.isActive
       ) {
         const denom = marketInfo.base
-        if (!this.tokensInfo[denom]) continue
+        if (!this.tokensInfo[denom]) {
+          console.log('token not found', denom, marketInfo.displayName)
+          continue
+        }
         const symbol = this.tokensInfo[denom].symbol.toUpperCase()
         // const key = marketInfo.displayName.split('_')[0]
         this.marketIdtoSymbol[marketInfo.id] = symbol
