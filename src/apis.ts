@@ -96,7 +96,7 @@ export class CarbonAPI {
     for (const m of res) {
       if (
         m.market_type === 'futures' &&
-        m.description.includes('Perpetual') &&
+        // m.description.includes('Perpetual') &&
         m.is_active
       ) {
         const market = mapKeys(m, (v, k) => camelCase(k))
